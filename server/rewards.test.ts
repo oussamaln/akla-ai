@@ -16,7 +16,7 @@ import {
   wouldCreateReferralCycle,
   shouldAwardWeeklyCheckin,
 } from "../shared/rewards";
-import { makeReferralCode, parseReferralCode } from "./rewards";
+import { isOpaqueReferralCode, makeReferralCode } from "./rewards";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -56,10 +56,14 @@ describe("Akla reward rules", () => {
     expect(isValidEthereumAddress("0x1234")).toBe(false);
   });
 
-  it("creates deterministic referral codes and rejects malformed codes", () => {
-    const code = makeReferralCode(123456);
-    expect(parseReferralCode(code)).toBe(123456);
-    expect(parseReferralCode("akla-not-valid!")).toBeNull();
+  it("creates opaque random referral tokens rather than account-derived codes", () => {
+    const firstCode = makeReferralCode();
+    const secondCode = makeReferralCode();
+    expect(isOpaqueReferralCode(firstCode)).toBe(true);
+    expect(isOpaqueReferralCode(secondCode)).toBe(true);
+    expect(firstCode).not.toBe(secondCode);
+    expect(isOpaqueReferralCode("akla000001")).toBe(false);
+    expect(isOpaqueReferralCode("akla-not-valid!")).toBe(false);
   });
 
   it("identifies duplicate idempotency keys before a ledger reward is created twice", () => {

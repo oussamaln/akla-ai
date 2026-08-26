@@ -12,6 +12,7 @@ import {
   quests,
   rateLimitWindows,
   referrals,
+  referralCodes,
   referralRewards,
   socialAccounts,
   wallets,
@@ -34,6 +35,7 @@ import {
   shouldAwardWeeklyCheckin,
   wouldCreateReferralCycle,
 } from "../shared/rewards";
+import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
 import { storagePut } from "./storage";
 
@@ -102,15 +104,29 @@ function previousUtcDateKey(date = new Date()) {
   return utcDateKey(prior);
 }
 
-export function makeReferralCode(userId: number) {
-  return `akla${userId.toString(36).padStart(6, "0")}`;
+export function makeReferralCode() {
+  return `akla_${randomBytes(12).toString("base64url")}`;
 }
 
-export function parseReferralCode(code: string) {
-  const match = /^akla([a-z0-9]+)$/i.exec(code.trim());
-  if (!match) return null;
-  const userId = Number.parseInt(match[1], 36);
-  return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
+export function isOpaqueReferralCode(code: string) {
+  return /^akla_[A-Za-z0-9_-]{16}$/.test(code);
+}
+
+export async function ensureReferralCode(userId: number) {
+  const db = requireDatabase(await getDb());
+  const existing = await db.select().from(referralCodes).where(eq(referralCodes.userId, userId)).limit(1);
+  if (existing[0]) return existing[0].code;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = makeReferralCode();
+    try {
+      await db.insert(referralCodes).values({ userId, code });
+      return code;
+    } catch {
+      const raced = await db.select().from(referralCodes).where(eq(referralCodes.userId, userId)).limit(1);
+      if (raced[0]) return raced[0].code;
+    }
+  }
+  throw new Error("Unable to create a unique referral code. Please try again.");
 }
 
 export async function ensureDefaultConfiguration() {
@@ -352,7 +368,10 @@ export async function uploadProfileAvatar(userId: number, dataUrl: string) {
 
 export async function attachReferral(referredUserId: number, referralCode: string) {
   const db = requireDatabase(await getDb());
-  const referrerUserId = parseReferralCode(referralCode);
+  const code = referralCode.trim();
+  if (!isOpaqueReferralCode(code)) throw new Error("This referral link is invalid.");
+  const referralCodeRecord = await db.select().from(referralCodes).where(eq(referralCodes.code, code)).limit(1);
+  const referrerUserId = referralCodeRecord[0]?.userId;
   if (!referrerUserId) throw new Error("This referral link is invalid.");
   assertNotSelfReferral(referrerUserId, referredUserId);
   const existing = await db.select().from(referrals).where(eq(referrals.referredUserId, referredUserId)).limit(1);
@@ -364,7 +383,7 @@ export async function attachReferral(referredUserId: number, referralCode: strin
     const parent = await db.select({ referrerUserId: referrals.referrerUserId }).from(referrals).where(eq(referrals.referredUserId, currentId)).limit(1);
     currentId = parent[0]?.referrerUserId ?? null;
   }
-  await db.insert(referrals).values({ referrerUserId, referredUserId, referralCode: referralCode.trim(), tier: 1, status: "pending" });
+  await db.insert(referrals).values({ referrerUserId, referredUserId, referralCode: code, tier: 1, status: "pending" });
   await qualifyReferralForUser(referredUserId);
 }
 
@@ -404,7 +423,7 @@ export async function getMemberSummary(userId: number) {
     activeMultiplier,
     dailyCheckin: latestCheckin[0] ?? null,
     weeklyProgress: { completedDays: week[0]?.progressDays ?? 0, requiredDays: settings, completed: Boolean(week[0]?.completedAt) },
-    referral: { total: (referralMetrics.pending ?? 0) + (referralMetrics.qualified ?? 0), qualified: referralMetrics.qualified ?? 0, points: Number(referralPoints[0]?.total ?? 0), code: makeReferralCode(userId) },
+    referral: { total: (referralMetrics.pending ?? 0) + (referralMetrics.qualified ?? 0), qualified: referralMetrics.qualified ?? 0, points: Number(referralPoints[0]?.total ?? 0), code: await ensureReferralCode(userId) },
   };
 }
 

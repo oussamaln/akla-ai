@@ -15,6 +15,13 @@
       "when": 1787785313435,
       "tag": "0001_sparkling_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787787266319,
+      "tag": "0002_flaky_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

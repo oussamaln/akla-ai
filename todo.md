@@ -15,3 +15,4 @@
 - [x] Add server-side rate limits to the remaining sensitive administrative configuration mutations.
 - [x] Expand Vitest coverage for idempotency, referral protection, check-in limits, avatar validation, and quest approval rules.
 - [x] Save the final webdev checkpoint after the verified build and responsive screenshots pass.
+- [x] Replace predictable account-derived referral codes with securely generated opaque random referral tokens, including migration, lookup, UI use, tests, and verification.

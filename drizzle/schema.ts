@@ -208,6 +208,21 @@ export const referrals = mysqlTable(
   ],
 );
 
+export const referralCodes = mysqlTable(
+  "referral_codes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    code: varchar("code", { length: 48 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("referral_codes_user_unique").on(table.userId),
+    uniqueIndex("referral_codes_code_unique").on(table.code),
+  ],
+);
+
 export const referralRewards = mysqlTable(
   "referral_rewards",
   {
