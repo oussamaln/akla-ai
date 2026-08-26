@@ -1,17 +1,19 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import {
+  boolean,
+  decimal,
+  index,
+  int,
+  json,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  varchar,
+} from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -22,7 +24,327 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const profiles = mysqlTable(
+  "profiles",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    username: varchar("username", { length: 64 }).notNull(),
+    bio: varchar("bio", { length: 280 }),
+    avatarUrl: varchar("avatarUrl", { length: 2048 }),
+    avatarKey: varchar("avatarKey", { length: 512 }),
+    fullName: varchar("fullName", { length: 160 }),
+    dateOfBirth: varchar("dateOfBirth", { length: 10 }),
+    country: varchar("country", { length: 2 }),
+    profileComplete: boolean("profileComplete").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("profiles_user_id_unique").on(table.userId),
+    uniqueIndex("profiles_username_unique").on(table.username),
+  ],
+);
+
+export const wallets = mysqlTable(
+  "wallets",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    address: varchar("address", { length: 42 }).notNull(),
+    normalizedAddress: varchar("normalizedAddress", { length: 42 }).notNull(),
+    verificationState: mysqlEnum("verificationState", ["unverified", "verified"])
+      .default("unverified")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("wallets_user_id_unique").on(table.userId),
+    uniqueIndex("wallets_normalized_address_unique").on(table.normalizedAddress),
+  ],
+);
+
+export const socialAccounts = mysqlTable(
+  "social_accounts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    platform: mysqlEnum("platform", ["x", "telegram", "discord", "email"]).notNull(),
+    handle: varchar("handle", { length: 320 }).notNull(),
+    verificationState: mysqlEnum("verificationState", ["unverified", "manual", "verified"])
+      .default("manual")
+      .notNull(),
+    verifiedAt: timestamp("verifiedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("social_accounts_user_platform_unique").on(table.userId, table.platform)],
+);
+
+export const quests = mysqlTable(
+  "quests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    slug: varchar("slug", { length: 96 }).notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    description: text("description").notNull(),
+    category: mysqlEnum("category", ["social", "presence", "passage"]).notNull(),
+    questType: mysqlEnum("questType", ["standard", "premium", "daily", "weekly", "manual"]).default("standard").notNull(),
+    verificationType: mysqlEnum("verificationType", ["manual", "oauth", "api", "onchain", "system"])
+      .default("manual")
+      .notNull(),
+    platform: varchar("platform", { length: 64 }),
+    basePoints: int("basePoints").notNull(),
+    isPremium: boolean("isPremium").default(false).notNull(),
+    active: boolean("active").default(true).notNull(),
+    ctaLabel: varchar("ctaLabel", { length: 80 }),
+    ctaUrl: varchar("ctaUrl", { length: 2048 }),
+    instructions: json("instructions"),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    completionLimit: int("completionLimit").default(1).notNull(),
+    createdByUserId: int("createdByUserId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("quests_slug_unique").on(table.slug),
+    index("quests_active_category_idx").on(table.active, table.category),
+  ],
+);
+
+export const questCompletions = mysqlTable(
+  "quest_completions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    questId: int("questId").notNull(),
+    status: mysqlEnum("status", ["pending", "verified", "rejected"])
+      .default("pending")
+      .notNull(),
+    verificationData: json("verificationData"),
+    completedAt: timestamp("completedAt").defaultNow().notNull(),
+    verifiedAt: timestamp("verifiedAt"),
+    verifiedByUserId: int("verifiedByUserId"),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("quest_completions_idempotency_key_unique").on(table.idempotencyKey),
+    index("quest_completions_user_quest_idx").on(table.userId, table.questId),
+  ],
+);
+
+export const pointTransactions = mysqlTable(
+  "point_transactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    source: mysqlEnum("source", ["quest", "daily_checkin", "weekly_checkin", "referral_reward", "admin_adjustment", "campaign"])
+      .notNull(),
+    sourceId: varchar("sourceId", { length: 128 }).notNull(),
+    basePoints: int("basePoints").notNull(),
+    activeMultiplier: decimal("activeMultiplier", { precision: 4, scale: 2 }).notNull(),
+    finalPoints: int("finalPoints").notNull(),
+    qualifiesForMultiplier: boolean("qualifiesForMultiplier").default(true).notNull(),
+    idempotencyKey: varchar("idempotencyKey", { length: 160 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("point_transactions_idempotency_key_unique").on(table.idempotencyKey),
+    index("point_transactions_user_created_idx").on(table.userId, table.createdAt),
+    index("point_transactions_source_idx").on(table.source, table.sourceId),
+  ],
+);
+
+export const dailyCheckins = mysqlTable(
+  "daily_checkins",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    utcDateKey: varchar("utcDateKey", { length: 10 }).notNull(),
+    streak: int("streak").notNull(),
+    bestStreak: int("bestStreak").notNull(),
+    pointTransactionId: int("pointTransactionId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("daily_checkins_user_date_unique").on(table.userId, table.utcDateKey),
+    index("daily_checkins_user_created_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+export const weeklyCheckins = mysqlTable(
+  "weekly_checkins",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    utcWeekKey: varchar("utcWeekKey", { length: 10 }).notNull(),
+    progressDays: int("progressDays").default(0).notNull(),
+    completedAt: timestamp("completedAt"),
+    pointTransactionId: int("pointTransactionId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("weekly_checkins_user_week_unique").on(table.userId, table.utcWeekKey)],
+);
+
+export const referrals = mysqlTable(
+  "referrals",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    referrerUserId: int("referrerUserId").notNull(),
+    referredUserId: int("referredUserId").notNull(),
+    referralCode: varchar("referralCode", { length: 32 }).notNull(),
+    tier: int("tier").notNull(),
+    status: mysqlEnum("status", ["pending", "qualified", "blocked"]).default("pending").notNull(),
+    qualifiedAt: timestamp("qualifiedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("referrals_referred_user_unique").on(table.referredUserId),
+    index("referrals_referrer_status_idx").on(table.referrerUserId, table.status),
+  ],
+);
+
+export const referralRewards = mysqlTable(
+  "referral_rewards",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    referralId: int("referralId").notNull(),
+    downstreamTransactionId: int("downstreamTransactionId").notNull(),
+    rewardPercentage: decimal("rewardPercentage", { precision: 5, scale: 2 }).notNull(),
+    rewardPoints: int("rewardPoints").notNull(),
+    pointTransactionId: int("pointTransactionId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("referral_rewards_referral_downstream_unique").on(table.referralId, table.downstreamTransactionId),
+    index("referral_rewards_transaction_idx").on(table.pointTransactionId),
+  ],
+);
+
+export const multiplierLevels = mysqlTable(
+  "multiplier_levels",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    code: varchar("code", { length: 32 }).notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    rank: int("rank").notNull(),
+    multiplier: decimal("multiplier", { precision: 4, scale: 2 }).notNull(),
+    thresholdPoints: int("thresholdPoints").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("multiplier_levels_code_unique").on(table.code),
+    uniqueIndex("multiplier_levels_rank_unique").on(table.rank),
+  ],
+);
+
+export const multiplierUnlocks = mysqlTable(
+  "multiplier_unlocks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    multiplierLevelId: int("multiplierLevelId").notNull(),
+    unlockedAt: timestamp("unlockedAt").defaultNow().notNull(),
+    unlockSource: varchar("unlockSource", { length: 128 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [uniqueIndex("multiplier_unlocks_user_level_unique").on(table.userId, table.multiplierLevelId)],
+);
+
+export const leaderboardSnapshots = mysqlTable(
+  "leaderboard_snapshots",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    scope: mysqlEnum("scope", ["global", "weekly", "monthly", "referral"]).notNull(),
+    periodKey: varchar("periodKey", { length: 16 }).notNull(),
+    userId: int("userId").notNull(),
+    rank: int("rank").notNull(),
+    networkScore: int("networkScore").notNull(),
+    multiplier: decimal("multiplier", { precision: 4, scale: 2 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("leaderboard_snapshots_scope_period_user_unique").on(table.scope, table.periodKey, table.userId),
+    index("leaderboard_snapshots_scope_period_rank_idx").on(table.scope, table.periodKey, table.rank),
+  ],
+);
+
+export const campaigns = mysqlTable(
+  "campaigns",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 160 }).notNull(),
+    description: text("description"),
+    active: boolean("active").default(false).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    configuration: json("configuration"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [index("campaigns_active_dates_idx").on(table.active, table.startsAt, table.endsAt)],
+);
+
+export const officialSocialAccounts = mysqlTable(
+  "official_social_accounts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    platform: mysqlEnum("platform", ["x", "telegram", "discord", "email"]).notNull(),
+    handle: varchar("handle", { length: 320 }).notNull(),
+    url: varchar("url", { length: 2048 }),
+    active: boolean("active").default(true).notNull(),
+    updatedByUserId: int("updatedByUserId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("official_social_accounts_platform_unique").on(table.platform)],
+);
+
+export const appSettings = mysqlTable(
+  "app_settings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    key: varchar("key", { length: 128 }).notNull(),
+    value: json("value").notNull(),
+    updatedByUserId: int("updatedByUserId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("app_settings_key_unique").on(table.key)],
+);
+
+export const rateLimitWindows = mysqlTable(
+  "rate_limit_windows",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    action: varchar("action", { length: 64 }).notNull(),
+    windowStart: timestamp("windowStart").notNull(),
+    requestCount: int("requestCount").default(0).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [uniqueIndex("rate_limit_windows_user_action_window_unique").on(table.userId, table.action, table.windowStart)],
+);
+
+export const adminAuditLogs = mysqlTable(
+  "admin_audit_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    adminUserId: int("adminUserId").notNull(),
+    action: varchar("action", { length: 96 }).notNull(),
+    targetType: varchar("targetType", { length: 64 }).notNull(),
+    targetId: varchar("targetId", { length: 128 }),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [index("admin_audit_logs_admin_created_idx").on(table.adminUserId, table.createdAt)],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
-
-// TODO: Add your tables here

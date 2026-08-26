@@ -1,33 +1,36 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import DashboardLayout from "@/components/DashboardLayout";
+import { ErrorCard, formatPoints, LoadingCard, MetricCard, PageHeader, shortAddress, StatusPill } from "@/components/AklaUi";
+import { trpc } from "@/lib/trpc";
+import { ArrowRight, CalendarCheck2, Copy, Sparkles, WalletCards } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
+import { useLocation } from "wouter";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
 export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
-
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
-    </div>
-  );
+  const summary = trpc.member.summary.useQuery();
+  const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
+  const checkIn = trpc.member.quests.checkIn.useMutation({ onSuccess: result => { toast.success(`Check-in complete. ${formatPoints(result.daily.transaction.finalPoints)} points added.`); utils.member.summary.invalidate(); }, onError: error => toast.error(error.message) });
+  const referralHandled = useRef(false);
+  const attachReferral = trpc.member.referrals.attach.useMutation({ onSuccess: () => { toast.success("Referral link recognized. Qualification follows profile completion."); utils.member.summary.invalidate(); }, onError: error => toast.error(error.message) });
+  useEffect(() => {
+    if (referralHandled.current || !summary.data) return;
+    referralHandled.current = true;
+    const code = new URLSearchParams(window.location.search).get("ref");
+    if (code && code !== summary.data.referral.code) attachReferral.mutate({ referralCode: code });
+  }, [attachReferral, summary.data]);
+  if (summary.isLoading) return <DashboardLayout><LoadingCard /></DashboardLayout>;
+  if (summary.error || !summary.data) return <DashboardLayout><ErrorCard message={summary.error?.message || "Your member summary could not be loaded."} /></DashboardLayout>;
+  const data = summary.data;
+  const socials = ["x", "telegram", "discord", "email"] as const;
+  const socialByPlatform = new Map(data.socials.map(account => [account.platform, account]));
+  return <DashboardLayout><PageHeader eyebrow="Member dashboard" title="My Network Score" description="Your single, continuous score for Akla AI participation. Complete quests, activate your community identity, and build momentum over time." action={<Button onClick={() => setLocation("/quests")} className="bg-violet-500 text-white hover:bg-violet-400">Start earning <ArrowRight className="ml-2 h-4 w-4" /></Button>} />
+    <section className="score-hero"><div><p className="eyebrow text-violet-200">Current network score</p><p className="mt-4 font-display text-6xl font-semibold tracking-[-0.075em] text-white sm:text-7xl">{formatPoints(data.networkScore)}</p><p className="mt-4 max-w-lg text-sm leading-6 text-violet-100/70">Every verified activity contributes to your long-term Akla AI reputation. Multipliers apply only when you earn new qualifying points.</p></div><div className="score-orbit"><Sparkles className="h-6 w-6 text-amber-200" /><span className="font-display text-2xl font-semibold text-white">{data.activeMultiplier.multiplier.toFixed(1)}×</span><span className="text-[10px] font-semibold uppercase tracking-[.16em] text-violet-100/60">{data.activeMultiplier.label}</span></div></section>
+    {data.totalPoints === 0 && <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-sky-300/15 bg-sky-300/[0.06] px-5 py-4 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between"><span>No verified activity yet. Start with your profile, wallet, or first community quest to establish your score.</span><Button size="sm" variant="outline" onClick={() => setLocation("/quests")} className="border-sky-200/20 text-sky-100 hover:bg-sky-200/10">Explore quests</Button></div>}
+    <section className="mt-6 grid gap-4 md:grid-cols-3"><MetricCard label="Main points" value={formatPoints(data.totalPoints)} hint="Verified quest and activity rewards" /><MetricCard label="Today’s earnings" value={`+${formatPoints(data.todayEarnings)}`} hint="Qualifying rewards recorded today" accent="mint" /><MetricCard label="Active multiplier" value={`${data.activeMultiplier.multiplier.toFixed(1)}×`} hint="Highest unlocked tier, never stacked" accent="amber" /></section>
+    <section className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_.75fr]"><article className="panel-surface p-6"><div className="flex items-start justify-between gap-4"><div><p className="eyebrow">Momentum</p><h2 className="mt-2 font-display text-2xl font-semibold text-white">Keep your streak moving</h2><p className="mt-2 text-sm leading-6 text-slate-400">Daily presence builds into your weekly progression. One check-in per UTC day, with all rewards configured server-side.</p></div><CalendarCheck2 className="h-6 w-6 text-violet-300" /></div><div className="mt-7 flex items-end justify-between gap-6"><div><p className="font-display text-4xl font-semibold tracking-[-.05em] text-white">{data.dailyCheckin?.streak ?? 0}<span className="ml-1 text-lg text-slate-500">days</span></p><p className="mt-1 text-xs text-slate-500">Best streak: {data.dailyCheckin?.bestStreak ?? 0} days</p></div><Button disabled={checkIn.isPending || data.dailyCheckin?.utcDateKey === new Date().toISOString().slice(0, 10)} onClick={() => checkIn.mutate()} className="bg-white text-[#111026] hover:bg-slate-200">{data.dailyCheckin?.utcDateKey === new Date().toISOString().slice(0, 10) ? "Checked in" : "Check in +200"}</Button></div><div className="mt-7"><div className="mb-2 flex justify-between text-xs text-slate-400"><span>Weekly progression</span><span>{data.weeklyProgress.completedDays}/{data.weeklyProgress.requiredDays} days</span></div><div className="h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-400" style={{ width: `${Math.min(100, (data.weeklyProgress.completedDays / data.weeklyProgress.requiredDays) * 100)}%` }} /></div></div></article>
+      <article className="panel-surface p-6"><div className="flex items-start justify-between"><div><p className="eyebrow">Identity</p><h2 className="mt-2 font-display text-2xl font-semibold text-white">Network-ready profile</h2></div><Button variant="ghost" onClick={() => setLocation("/profile")} className="text-violet-200 hover:bg-violet-400/10 hover:text-white">Edit</Button></div><div className="mt-6 rounded-2xl border border-white/[0.07] bg-black/10 p-4"><div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-amber-200" /><div><p className="text-xs text-slate-500">ETH wallet</p><p className="mt-0.5 font-mono text-sm text-slate-200">{shortAddress(data.wallet?.address)}</p></div>{!data.wallet && <Button variant="ghost" size="sm" onClick={() => setLocation("/profile")} className="ml-auto text-violet-200 hover:bg-violet-400/10">Add</Button>}</div></div><div className="mt-4 grid grid-cols-2 gap-2">{socials.map(platform => <div key={platform} className="flex items-center justify-between rounded-xl bg-white/[0.035] px-3 py-2.5"><span className="capitalize text-xs text-slate-400">{platform === "x" ? "X" : platform}</span><StatusPill status={socialByPlatform.get(platform)?.verificationState || "unverified"} /></div>)}</div></article></section>
+    <section className="mt-6 rounded-2xl border border-violet-400/15 bg-violet-500/[0.07] p-5 sm:flex sm:items-center sm:justify-between"><div><p className="text-sm font-medium text-violet-100">Invite thoughtful builders to Akla AI.</p><p className="mt-1 text-xs text-slate-400">Your tier rewards are recorded separately in the ledger after referred members qualify.</p></div><Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?ref=${data.referral.code}`); toast.success("Referral link copied"); }} className="mt-4 border-violet-300/20 text-violet-100 hover:bg-violet-400/10 sm:mt-0"><Copy className="mr-2 h-4 w-4" />Copy referral link</Button></section>
+  </DashboardLayout>;
 }

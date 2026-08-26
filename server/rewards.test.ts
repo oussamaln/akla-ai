@@ -1,0 +1,124 @@
+import { describe, expect, it } from "vitest";
+import {
+  assertNotSelfReferral,
+  canVerifyQuestCompletion,
+  calculateFinalPoints,
+  hasAlreadyClaimedUtcPeriod,
+  isValidEthereumAddress,
+  isDuplicateIdempotencyKey,
+  isProfileQualificationEligible,
+  MULTIPLIER_TIER_VALUES,
+  REFERRAL_TIER_PERCENTAGES,
+  utcDateKey,
+  utcWeekKey,
+  validateAvatarPayload,
+  validateQuestReward,
+  wouldCreateReferralCycle,
+  shouldAwardWeeklyCheckin,
+} from "../shared/rewards";
+import { makeReferralCode, parseReferralCode } from "./rewards";
+import { appRouter } from "./routers";
+import type { TrpcContext } from "./_core/context";
+
+describe("Akla reward rules", () => {
+  it("rejects standard earning quests below the mandatory 200-point minimum", () => {
+    expect(() => validateQuestReward({ basePoints: 199, questType: "standard", isPremium: false })).toThrow("at least 200");
+    expect(() => validateQuestReward({ basePoints: 150, questType: "daily", isPremium: false })).toThrow("at least 200");
+    expect(() => validateQuestReward({ basePoints: 200, questType: "weekly", isPremium: false })).not.toThrow();
+  });
+
+  it("accepts premium quest rewards above the standard floor", () => {
+    expect(() => validateQuestReward({ basePoints: 1000, questType: "premium", isPremium: true })).not.toThrow();
+  });
+
+  it("applies only the active tier multiplier to qualifying future earnings", () => {
+    expect(calculateFinalPoints(200, 1.5)).toBe(300);
+    expect(calculateFinalPoints(1000, 2)).toBe(2000);
+    expect(calculateFinalPoints(200, 2, false)).toBe(200);
+    expect(() => calculateFinalPoints(200, 1.8)).toThrow("configured tier");
+  });
+
+  it("keeps referral percentages and multiplier tiers fixed to the configured policy", () => {
+    expect(REFERRAL_TIER_PERCENTAGES).toEqual({ 1: 15, 2: 10, 3: 5 });
+    expect(MULTIPLIER_TIER_VALUES).toEqual([1, 1.2, 1.5, 2]);
+  });
+
+  it("uses stable UTC day and weekly keys for check-in enforcement", () => {
+    const sunday = new Date("2026-08-30T23:30:00.000Z");
+    const monday = new Date("2026-08-31T00:30:00.000Z");
+    expect(utcDateKey(sunday)).toBe("2026-08-30");
+    expect(utcWeekKey(sunday)).toBe("2026-08-24");
+    expect(utcWeekKey(monday)).toBe("2026-08-31");
+  });
+
+  it("validates Ethereum wallet shape before persistence", () => {
+    expect(isValidEthereumAddress("0x1234567890abcdef1234567890ABCDEF12345678")).toBe(true);
+    expect(isValidEthereumAddress("0x1234")).toBe(false);
+  });
+
+  it("creates deterministic referral codes and rejects malformed codes", () => {
+    const code = makeReferralCode(123456);
+    expect(parseReferralCode(code)).toBe(123456);
+    expect(parseReferralCode("akla-not-valid!")).toBeNull();
+  });
+
+  it("identifies duplicate idempotency keys before a ledger reward is created twice", () => {
+    expect(isDuplicateIdempotencyKey(["quest:101", "daily:42:2026-08-26"], "quest:101")).toBe(true);
+    expect(isDuplicateIdempotencyKey(["quest:101"], "quest:102")).toBe(false);
+  });
+
+  it("detects duplicate daily or weekly UTC period claims", () => {
+    expect(hasAlreadyClaimedUtcPeriod(["2026-08-26"], "2026-08-26")).toBe(true);
+    expect(hasAlreadyClaimedUtcPeriod(["2026-08-26"], "2026-08-27")).toBe(false);
+  });
+
+  it("blocks referral cycles before a referral relationship is persisted", () => {
+    expect(wouldCreateReferralCycle(9, [12, 9, 4])).toBe(true);
+    expect(wouldCreateReferralCycle(9, [12, 8, 4])).toBe(false);
+    expect(() => assertNotSelfReferral(9, 9)).toThrow("own referral");
+    expect(() => assertNotSelfReferral(9, 10)).not.toThrow();
+  });
+
+  it("qualifies referrals only after the required profile identity is complete", () => {
+    expect(isProfileQualificationEligible({ username: "member-1", fullName: "Akla Member", dateOfBirth: "1990-01-01", country: "US", walletAddress: "0x123" })).toBe(true);
+    expect(isProfileQualificationEligible({ username: "member-1", fullName: "Akla Member", country: "US", walletAddress: "0x123" })).toBe(false);
+  });
+
+  it("awards a weekly check-in only after progress reaches the configured threshold and only once", () => {
+    expect(shouldAwardWeeklyCheckin(4, 5, false)).toBe(false);
+    expect(shouldAwardWeeklyCheckin(5, 5, false)).toBe(true);
+    expect(shouldAwardWeeklyCheckin(5, 5, true)).toBe(false);
+  });
+
+  it("allows quest award approval only from a pending verification state", () => {
+    expect(canVerifyQuestCompletion("pending")).toBe(true);
+    expect(canVerifyQuestCompletion("verified")).toBe(false);
+    expect(canVerifyQuestCompletion("rejected")).toBe(false);
+  });
+
+  it("accepts signed image payloads only when their MIME declaration and bytes agree", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    expect(validateAvatarPayload(png)).toMatchObject({ mimeType: "image/png", extension: "png" });
+    expect(() => validateAvatarPayload("data:image/png;base64,/9j/")).toThrow("does not match");
+    expect(() => validateAvatarPayload("data:image/gif;base64,R0lGODlh")).toThrow("PNG, JPEG, or WebP");
+  });
+
+  it("blocks a standard member from the admin rewards console", async () => {
+    const ctx = {
+      user: {
+        id: 42,
+        openId: "member-open-id",
+        name: "Member",
+        email: "member@example.com",
+        loginMethod: "manus",
+        role: "user",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      },
+      req: {} as TrpcContext["req"],
+      res: {} as TrpcContext["res"],
+    } as TrpcContext;
+    await expect(appRouter.createCaller(ctx).admin.overview()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
