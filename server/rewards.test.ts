@@ -17,6 +17,7 @@ import {
   shouldAwardWeeklyCheckin,
 } from "../shared/rewards";
 import { isOpaqueReferralCode, makeReferralCode } from "./rewards";
+import { resolveRoleAssignment } from "./db";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -98,6 +99,12 @@ describe("Akla reward rules", () => {
     expect(canVerifyQuestCompletion("pending")).toBe(true);
     expect(canVerifyQuestCompletion("verified")).toBe(false);
     expect(canVerifyQuestCompletion("rejected")).toBe(false);
+  });
+
+  it("preserves an existing administrator role during routine OAuth account refreshes", () => {
+    expect(resolveRoleAssignment(undefined, false)).toBeUndefined();
+    expect(resolveRoleAssignment(undefined, true)).toBe("admin");
+    expect(resolveRoleAssignment("admin", false)).toBe("admin");
   });
 
   it("accepts signed image payloads only when their MIME declaration and bytes agree", () => {

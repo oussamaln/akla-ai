@@ -19,3 +19,4 @@
 - [ ] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
 - [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
 - [ ] Prevent cached authenticated profile responses from showing an obsolete member role after administrator sign-in and verify the published Admin Console refreshes correctly.
+- [x] Preserve existing elevated user roles during OAuth authentication upserts so administrator access is not reset to member.

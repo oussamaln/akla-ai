@@ -5,6 +5,11 @@ import { ENV } from "./_core/env";
 
 let database: ReturnType<typeof drizzle> | null = null;
 
+export function resolveRoleAssignment(role: InsertUser["role"] | undefined, isProjectOwner: boolean) {
+  if (role !== undefined) return role;
+  return isProjectOwner ? "admin" : undefined;
+}
+
 export async function getDb() {
   if (!database && process.env.DATABASE_URL) {
     try {
@@ -30,8 +35,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet[field] = user[field] ?? null;
     }
   }
-  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
-  updateSet.role = values.role;
+  // Assign a role only for a deliberate role update or the first sign-in of the
+  // configured project owner. Routine OAuth refreshes must never demote an
+  // administrator back to the default member role.
+  const roleAssignment = resolveRoleAssignment(user.role, user.openId === ENV.ownerOpenId);
+  if (roleAssignment) {
+    values.role = roleAssignment;
+    updateSet.role = roleAssignment;
+  }
 
   await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
