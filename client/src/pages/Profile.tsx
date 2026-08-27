@@ -11,11 +11,11 @@ import { toast } from "sonner";
 
 type FormState = {
   username: string; bio: string; fullName: string; dateOfBirth: string; country: string;
-  walletAddress: string; x: string; telegram: string; discord: string; email: string;
+  walletAddress: string; x: string; telegram: string; discord: string; instagram: string; email: string;
 };
 
-const emptyForm: FormState = { username: "", bio: "", fullName: "", dateOfBirth: "", country: "", walletAddress: "", x: "", telegram: "", discord: "", email: "" };
-const socialPlatforms = ["x", "telegram", "discord", "email"] as const;
+const emptyForm: FormState = { username: "", bio: "", fullName: "", dateOfBirth: "", country: "", walletAddress: "", x: "", telegram: "", discord: "", instagram: "", email: "" };
+const socialPlatforms = ["x", "telegram", "discord", "instagram", "email"] as const;
 
 function socialLabel(platform: (typeof socialPlatforms)[number]) {
   if (platform === "x") return "X username";
@@ -44,7 +44,7 @@ export default function Profile() {
       fullName: summary.data.profile?.fullName ?? "", dateOfBirth: summary.data.profile?.dateOfBirth ?? "",
       country: summary.data.profile?.country ?? "", walletAddress: summary.data.wallet?.address ?? "",
       x: social.get("x") ?? "", telegram: social.get("telegram") ?? "",
-      discord: social.get("discord") ?? "", email: social.get("email") ?? "",
+      discord: social.get("discord") ?? "", instagram: social.get("instagram") ?? "", email: social.get("email") ?? "",
     });
   }, [summary.data]);
 
@@ -76,7 +76,7 @@ export default function Profile() {
             username: form.username, bio: form.bio || undefined, fullName: form.fullName || undefined,
             dateOfBirth: form.dateOfBirth || undefined, country: form.country || undefined,
             walletAddress: form.walletAddress || undefined,
-            socialAccounts: { x: form.x || undefined, telegram: form.telegram || undefined, discord: form.discord || undefined, email: form.email || undefined },
+            socialAccounts: { x: form.x || undefined, telegram: form.telegram || undefined, discord: form.discord || undefined, instagram: form.instagram || undefined, email: form.email || undefined },
           });
         }}
       >
@@ -94,6 +94,7 @@ export default function Profile() {
             </div>
             <h2 className="mt-4 font-display text-xl font-semibold text-white">{form.username || "Akla member"}</h2>
             <p className="mt-1 text-xs text-slate-500">PNG, JPEG, or WebP · 2 MB maximum</p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-violet-300/15 bg-violet-400/[0.07] px-3 py-1.5 text-xs text-violet-100"><span className="text-violet-200/70">UID</span><code className="font-mono font-medium">{summary.data.memberUid || "Generating…"}</code></div>
             {upload.isPending && <p className="mt-4 flex items-center gap-2 text-xs text-violet-200"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Uploading securely</p>}
           </div>
           <div className="mt-8 space-y-3">

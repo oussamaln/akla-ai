@@ -14,6 +14,7 @@ import {
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
+  memberUid: varchar("memberUid", { length: 20 }),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -22,7 +23,7 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
+}, table => [uniqueIndex("users_member_uid_unique").on(table.memberUid)]);
 
 export const profiles = mysqlTable(
   "profiles",
@@ -70,7 +71,7 @@ export const socialAccounts = mysqlTable(
   {
     id: int("id").autoincrement().primaryKey(),
     userId: int("userId").notNull(),
-    platform: mysqlEnum("platform", ["x", "telegram", "discord", "email"]).notNull(),
+    platform: mysqlEnum("platform", ["x", "telegram", "discord", "instagram", "email"]).notNull(),
     handle: varchar("handle", { length: 320 }).notNull(),
     verificationState: mysqlEnum("verificationState", ["unverified", "manual", "verified"])
       .default("manual")
@@ -310,7 +311,7 @@ export const officialSocialAccounts = mysqlTable(
   "official_social_accounts",
   {
     id: int("id").autoincrement().primaryKey(),
-    platform: mysqlEnum("platform", ["x", "telegram", "discord", "email"]).notNull(),
+    platform: mysqlEnum("platform", ["x", "telegram", "discord", "instagram", "email"]).notNull(),
     handle: varchar("handle", { length: 320 }).notNull(),
     url: varchar("url", { length: 2048 }),
     active: boolean("active").default(true).notNull(),

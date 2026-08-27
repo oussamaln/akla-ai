@@ -20,3 +20,8 @@
 - [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
 - [x] Force a fresh `auth.me` query on mount after sign-in so the client cannot retain a stale member role, then verify the published Admin Console refreshes correctly.
 - [x] Preserve existing elevated user roles during OAuth authentication upserts so administrator access is not reset to member.
+- [x] Add an immutable auto-generated UID for each new member and display it on the member profile.
+- [ ] Return every quest submission for a selected member, preserving repeated quest attempts and all current task states in the UID- and username-searchable review detail.
+- [ ] Verify the user-list-first manual proof review flow while authenticated, including UID and username search plus per-submission approval or rejection.
+- [x] Enhance the quest manager with supported social platform choices and recognizable X, Telegram, Discord, and Instagram platform avatars.
+- [ ] Add automated coverage for multi-submission review history and supported social platform quest configuration, then complete authenticated visual verification.

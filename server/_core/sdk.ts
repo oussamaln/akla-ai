@@ -315,8 +315,9 @@ class SDKServer {
       openId: user.openId,
       lastSignedIn: signedInAt,
     });
-
-    return user;
+    const refreshedUser = await db.getUserByOpenId(user.openId);
+    if (!refreshedUser) throw ForbiddenError("User not found after session refresh");
+    return refreshedUser;
   }
 }
 

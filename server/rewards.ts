@@ -337,7 +337,7 @@ export async function updateMemberProfile(input: {
   dateOfBirth?: string;
   country?: string;
   walletAddress?: string;
-  socialAccounts: Partial<Record<"x" | "telegram" | "discord" | "email", string>>;
+  socialAccounts: Partial<Record<"x" | "telegram" | "discord" | "instagram" | "email", string>>;
 }) {
   const db = requireDatabase(await getDb());
   const username = input.username.trim().toLowerCase();
@@ -349,7 +349,7 @@ export async function updateMemberProfile(input: {
     const address = input.walletAddress.trim();
     await db.insert(wallets).values({ userId: input.userId, address, normalizedAddress: address.toLowerCase() }).onDuplicateKeyUpdate({ set: { address, normalizedAddress: address.toLowerCase() } });
   }
-  for (const [platform, rawHandle] of Object.entries(input.socialAccounts) as Array<["x" | "telegram" | "discord" | "email", string | undefined]>) {
+  for (const [platform, rawHandle] of Object.entries(input.socialAccounts) as Array<["x" | "telegram" | "discord" | "instagram" | "email", string | undefined]>) {
     const handle = rawHandle?.trim();
     if (!handle) continue;
     await db.insert(socialAccounts).values({ userId: input.userId, platform, handle, verificationState: "manual" }).onDuplicateKeyUpdate({ set: { handle, verificationState: "manual" } });
@@ -400,6 +400,7 @@ export async function qualifyReferralForUser(referredUserId: number) {
 export async function getMemberSummary(userId: number) {
   const db = requireDatabase(await getDb());
   await ensureDefaultConfiguration();
+  const [member] = await db.select({ memberUid: users.memberUid }).from(users).where(eq(users.id, userId)).limit(1);
   const [profile] = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
   const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
   const socials = await db.select().from(socialAccounts).where(eq(socialAccounts.userId, userId));
@@ -414,6 +415,7 @@ export async function getMemberSummary(userId: number) {
   const referralPoints = await db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(and(eq(pointTransactions.userId, userId), eq(pointTransactions.source, "referral_reward")));
   const referralMetrics = referralRows.reduce((acc, row) => ({ ...acc, [row.status]: Number(row.count) }), {} as Record<string, number>);
   return {
+    memberUid: member?.memberUid ?? null,
     profile,
     wallet,
     socials,
@@ -436,7 +438,7 @@ export async function getQuestBoard(userId: number) {
   const completionByQuest = new Map(completions.map(completion => [completion.questId, completion]));
   const officialByPlatform = new Map(officialAccounts.map(account => [account.platform, account]));
   return activeQuests.map(quest => {
-    const official = quest.platform ? officialByPlatform.get(quest.platform as "x" | "telegram" | "discord" | "email") : undefined;
+    const official = quest.platform ? officialByPlatform.get(quest.platform as "x" | "telegram" | "discord" | "instagram" | "email") : undefined;
     return { ...quest, ctaUrl: quest.ctaUrl ?? official?.url ?? null, completion: completionByQuest.get(quest.id) ?? null };
   });
 }
@@ -566,14 +568,54 @@ export async function getAdminUsers(input: { search?: string; page: number; page
   const page = Math.max(0, input.page);
   const pageSize = Math.min(Math.max(1, input.pageSize), 50);
   const records = await db
-    .select({ id: users.id, name: users.name, email: users.email, role: users.role, lastSignedIn: users.lastSignedIn, username: profiles.username, profileComplete: profiles.profileComplete })
+    .select({ id: users.id, memberUid: users.memberUid, name: users.name, email: users.email, role: users.role, lastSignedIn: users.lastSignedIn, username: profiles.username, profileComplete: profiles.profileComplete })
     .from(users)
     .leftJoin(profiles, eq(users.id, profiles.userId))
     .orderBy(desc(users.lastSignedIn))
     .limit(pageSize)
     .offset(page * pageSize);
   const query = input.search?.trim().toLowerCase();
-  return query ? records.filter(record => `${record.name ?? ""} ${record.email ?? ""} ${record.username ?? ""}`.toLowerCase().includes(query)) : records;
+  return query ? records.filter(record => `${record.memberUid ?? ""} ${record.name ?? ""} ${record.email ?? ""} ${record.username ?? ""}`.toLowerCase().includes(query)) : records;
+}
+
+export async function getAdminReviewMembers(input: { search?: string }) {
+  const db = requireDatabase(await getDb());
+  const records = await db
+    .select({
+      id: users.id,
+      memberUid: users.memberUid,
+      name: users.name,
+      username: profiles.username,
+      avatarUrl: profiles.avatarUrl,
+      pendingSubmissions: sql<number>`(select count(*) from ${questCompletions} where ${questCompletions.userId} = ${users.id} and ${questCompletions.status} = 'pending')`,
+      totalSubmissions: sql<number>`(select count(*) from ${questCompletions} where ${questCompletions.userId} = ${users.id})`,
+    })
+    .from(users)
+    .leftJoin(profiles, eq(users.id, profiles.userId))
+    .orderBy(desc(users.lastSignedIn))
+    .limit(100);
+  const query = input.search?.trim().toLowerCase();
+  const filtered = query ? records.filter(record => `${record.memberUid ?? ""} ${record.name ?? ""} ${record.username ?? ""}`.toLowerCase().includes(query)) : records;
+  return filtered.map(record => ({ ...record, pendingSubmissions: Number(record.pendingSubmissions), totalSubmissions: Number(record.totalSubmissions) }));
+}
+
+export function buildQuestHistory<TQuest extends { id: number }, TSubmission extends { questId: number }>(allQuests: TQuest[], submissions: TSubmission[]) {
+  const submissionsByQuest = new Map<number, TSubmission[]>();
+  for (const submission of submissions) {
+    const history = submissionsByQuest.get(submission.questId) ?? [];
+    history.push(submission);
+    submissionsByQuest.set(submission.questId, history);
+  }
+  return allQuests.map(quest => ({ quest, submissions: submissionsByQuest.get(quest.id) ?? [] }));
+}
+
+export async function getAdminUserQuestHistory(userId: number) {
+  const db = requireDatabase(await getDb());
+  const [allQuests, submissions] = await Promise.all([
+    db.select().from(quests).orderBy(quests.category, quests.createdAt),
+    db.select().from(questCompletions).where(eq(questCompletions.userId, userId)).orderBy(desc(questCompletions.completedAt)),
+  ]);
+  return buildQuestHistory(allQuests, submissions);
 }
 
 export async function getUserPointHistory(userId: number) {
@@ -601,5 +643,6 @@ export async function getAdminUserDetail(userId: number) {
   const multiplier = await getActiveMultiplier(userId);
   const points = await getUserPointHistory(userId);
   const referrals = await getReferralTree(userId);
-  return { user, profile, wallet, socials, multiplier, points, referrals };
+  const questHistory = await getAdminUserQuestHistory(userId);
+  return { user, profile, wallet, socials, multiplier, points, referrals, questHistory };
 }

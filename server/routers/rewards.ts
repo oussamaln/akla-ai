@@ -9,6 +9,7 @@ import {
   ensureDefaultConfiguration,
   ensureProfile,
   getAdminOverview,
+  getAdminReviewMembers,
   getAdminUserDetail,
   getAdminUsers,
   getLeaderboard,
@@ -31,6 +32,7 @@ const socialInput = z.object({
   x: z.string().max(320).optional(),
   telegram: z.string().max(320).optional(),
   discord: z.string().max(320).optional(),
+  instagram: z.string().max(320).optional(),
   email: z.string().email().max(320).optional(),
 });
 
@@ -122,6 +124,7 @@ export const adminRouter = router({
     referralTree: adminProcedure.input(z.object({ userId: z.number().int().positive() })).query(({ input }) => getReferralTree(input.userId)),
   }),
   questReview: router({
+    members: adminProcedure.input(z.object({ search: z.string().trim().max(160).optional() })).query(({ input }) => getAdminReviewMembers(input)),
     decide: adminProcedure.input(z.object({ completionId: z.number().int().positive(), approved: z.boolean() })).mutation(async ({ ctx, input }) => {
       await enforceRateLimit(ctx.user.id, "admin_quest_review", 60, 60 * 60 * 1000);
       const result = await verifyQuestCompletion(ctx.user.id, input.completionId, input.approved);
@@ -159,7 +162,7 @@ export const adminRouter = router({
       if (!db) throw new Error("Database unavailable");
       return db.select().from(officialSocialAccounts).orderBy(officialSocialAccounts.platform);
     }),
-    upsert: adminProcedure.input(z.object({ platform: z.enum(["x", "telegram", "discord", "email"]), handle: z.string().trim().min(1).max(320), url: z.string().url().max(2048).optional(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
+    upsert: adminProcedure.input(z.object({ platform: z.enum(["x", "telegram", "discord", "instagram", "email"]), handle: z.string().trim().min(1).max(320), url: z.string().url().max(2048).optional(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       await enforceRateLimit(ctx.user.id, "admin_social_config", 30, 60 * 60 * 1000);
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");

@@ -9,6 +9,7 @@ import {
   isProfileQualificationEligible,
   MULTIPLIER_TIER_VALUES,
   REFERRAL_TIER_PERCENTAGES,
+  SUPPORTED_SOCIAL_QUEST_PLATFORMS,
   utcDateKey,
   utcWeekKey,
   validateAvatarPayload,
@@ -16,8 +17,8 @@ import {
   wouldCreateReferralCycle,
   shouldAwardWeeklyCheckin,
 } from "../shared/rewards";
-import { isOpaqueReferralCode, makeReferralCode } from "./rewards";
-import { resolveRoleAssignment } from "./db";
+import { buildQuestHistory, isOpaqueReferralCode, makeReferralCode } from "./rewards";
+import { makeMemberUid, resolveRoleAssignment } from "./db";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -65,6 +66,29 @@ describe("Akla reward rules", () => {
     expect(firstCode).not.toBe(secondCode);
     expect(isOpaqueReferralCode("akla000001")).toBe(false);
     expect(isOpaqueReferralCode("akla-not-valid!")).toBe(false);
+  });
+
+  it("creates opaque member UIDs for account identity and admin lookup", () => {
+    const firstUid = makeMemberUid();
+    const secondUid = makeMemberUid();
+    expect(firstUid).toMatch(/^UID-[A-F0-9]{12}$/);
+    expect(secondUid).toMatch(/^UID-[A-F0-9]{12}$/);
+    expect(firstUid).not.toBe(secondUid);
+  });
+
+  it("retains every submission for a selected member instead of collapsing repeat attempts", () => {
+    const history = buildQuestHistory([{ id: 1, title: "Daily proof" }, { id: 2, title: "Discord proof" }], [
+      { id: 10, questId: 1, status: "verified" },
+      { id: 11, questId: 1, status: "pending" },
+      { id: 12, questId: 2, status: "rejected" },
+    ]);
+    expect(history[0]?.submissions).toHaveLength(2);
+    expect(history[0]?.submissions.map(submission => submission.id)).toEqual([10, 11]);
+    expect(history[1]?.submissions).toHaveLength(1);
+  });
+
+  it("keeps all required social platforms available to quest configuration", () => {
+    expect(SUPPORTED_SOCIAL_QUEST_PLATFORMS).toEqual(["x", "telegram", "discord", "instagram"]);
   });
 
   it("identifies duplicate idempotency keys before a ledger reward is created twice", () => {

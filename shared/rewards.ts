@@ -7,6 +7,7 @@ export const REFERRAL_TIER_PERCENTAGES = {
 } as const;
 
 export const MULTIPLIER_TIER_VALUES = [1, 1.2, 1.5, 2] as const;
+export const SUPPORTED_SOCIAL_QUEST_PLATFORMS = ["x", "telegram", "discord", "instagram"] as const;
 
 export type QuestCategory = "social" | "presence" | "passage";
 export type QuestType = "standard" | "premium" | "daily" | "weekly" | "manual";
