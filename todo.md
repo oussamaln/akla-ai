@@ -16,7 +16,7 @@
 - [x] Expand Vitest coverage for idempotency, referral protection, check-in limits, avatar validation, and quest approval rules.
 - [x] Save the final webdev checkpoint after the verified build and responsive screenshots pass.
 - [x] Replace predictable account-derived referral codes with securely generated opaque random referral tokens, including migration, lookup, UI use, tests, and verification.
-- [ ] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
+- [x] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
 - [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
-- [ ] Prevent cached authenticated profile responses from showing an obsolete member role after administrator sign-in and verify the published Admin Console refreshes correctly.
+- [ ] Force a fresh `auth.me` query on mount after sign-in so the client cannot retain a stale member role, then verify the published Admin Console refreshes correctly.
 - [x] Preserve existing elevated user roles during OAuth authentication upserts so administrator access is not reset to member.
