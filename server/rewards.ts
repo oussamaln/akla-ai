@@ -55,6 +55,8 @@ const DEFAULT_SETTINGS = {
   readTheDocsUrl: "",
 } as const;
 
+let defaultConfigurationReady: Promise<void> | null = null;
+
 type DefaultQuest = {
   slug: string;
   title: string;
@@ -130,31 +132,20 @@ export async function ensureReferralCode(userId: number) {
 }
 
 export async function ensureDefaultConfiguration() {
-  const db = requireDatabase(await getDb());
-  for (const level of DEFAULT_MULTIPLIERS) {
-    await db.insert(multiplierLevels).values(level).onDuplicateKeyUpdate({
-      set: { label: level.label, rank: level.rank, multiplier: level.multiplier, thresholdPoints: level.thresholdPoints, active: true },
+  if (!defaultConfigurationReady) {
+    defaultConfigurationReady = (async () => {
+      const db = requireDatabase(await getDb());
+      await Promise.all([
+        ...DEFAULT_MULTIPLIERS.map(level => db.insert(multiplierLevels).values(level).onDuplicateKeyUpdate({ set: { code: sql`${multiplierLevels.code}` } })),
+        ...Object.entries(DEFAULT_SETTINGS).map(([key, value]) => db.insert(appSettings).values({ key, value }).onDuplicateKeyUpdate({ set: { key: sql`${appSettings.key}` } })),
+        ...DEFAULT_QUESTS.map(quest => db.insert(quests).values({ ...quest, active: quest.active ?? true, completionLimit: 1 }).onDuplicateKeyUpdate({ set: { slug: sql`${quests.slug}` } })),
+      ]);
+    })().catch(error => {
+      defaultConfigurationReady = null;
+      throw error;
     });
   }
-  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-    await db.insert(appSettings).values({ key, value }).onDuplicateKeyUpdate({ set: { value } });
-  }
-  for (const quest of DEFAULT_QUESTS) {
-    await db.insert(quests).values({ ...quest, active: quest.active ?? true, completionLimit: 1 }).onDuplicateKeyUpdate({
-      set: {
-        title: quest.title,
-        description: quest.description,
-        category: quest.category,
-        questType: quest.questType,
-        verificationType: quest.verificationType,
-        platform: quest.platform ?? null,
-        basePoints: quest.basePoints,
-        isPremium: quest.isPremium,
-        active: quest.active ?? true,
-        ctaLabel: quest.ctaLabel,
-      },
-    });
-  }
+  return defaultConfigurationReady;
 }
 
 export async function enforceRateLimit(userId: number, action: string, limit: number, windowMs: number) {
@@ -400,19 +391,25 @@ export async function qualifyReferralForUser(referredUserId: number) {
 export async function getMemberSummary(userId: number) {
   const db = requireDatabase(await getDb());
   await ensureDefaultConfiguration();
-  const [member] = await db.select({ memberUid: users.memberUid }).from(users).where(eq(users.id, userId)).limit(1);
-  const [profile] = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
-  const [wallet] = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
-  const socials = await db.select().from(socialAccounts).where(eq(socialAccounts.userId, userId));
-  const totals = await db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(eq(pointTransactions.userId, userId));
   const today = startOfUtcDay();
-  const todayTotals = await db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(and(eq(pointTransactions.userId, userId), gte(pointTransactions.createdAt, today)));
-  const activeMultiplier = await getActiveMultiplier(userId);
-  const latestCheckin = await db.select().from(dailyCheckins).where(eq(dailyCheckins.userId, userId)).orderBy(desc(dailyCheckins.createdAt)).limit(1);
-  const week = await db.select().from(weeklyCheckins).where(and(eq(weeklyCheckins.userId, userId), eq(weeklyCheckins.utcWeekKey, utcWeekKey()))).limit(1);
-  const settings = await getSetting("weeklyCheckinDaysRequired", 5);
-  const referralRows = await db.select({ status: referrals.status, count: sql<number>`count(*)` }).from(referrals).where(eq(referrals.referrerUserId, userId)).groupBy(referrals.status);
-  const referralPoints = await db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(and(eq(pointTransactions.userId, userId), eq(pointTransactions.source, "referral_reward")));
+  const [memberRows, profileRows, walletRows, socials, totals, todayTotals, activeMultiplier, latestCheckin, week, settings, referralRows, referralPoints, referralCode] = await Promise.all([
+    db.select({ memberUid: users.memberUid }).from(users).where(eq(users.id, userId)).limit(1),
+    db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1),
+    db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1),
+    db.select().from(socialAccounts).where(eq(socialAccounts.userId, userId)),
+    db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(eq(pointTransactions.userId, userId)),
+    db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(and(eq(pointTransactions.userId, userId), gte(pointTransactions.createdAt, today))),
+    getActiveMultiplier(userId),
+    db.select().from(dailyCheckins).where(eq(dailyCheckins.userId, userId)).orderBy(desc(dailyCheckins.createdAt)).limit(1),
+    db.select().from(weeklyCheckins).where(and(eq(weeklyCheckins.userId, userId), eq(weeklyCheckins.utcWeekKey, utcWeekKey()))).limit(1),
+    getSetting("weeklyCheckinDaysRequired", 5),
+    db.select({ status: referrals.status, count: sql<number>`count(*)` }).from(referrals).where(eq(referrals.referrerUserId, userId)).groupBy(referrals.status),
+    db.select({ total: sql<number>`coalesce(sum(${pointTransactions.finalPoints}), 0)` }).from(pointTransactions).where(and(eq(pointTransactions.userId, userId), eq(pointTransactions.source, "referral_reward"))),
+    ensureReferralCode(userId),
+  ]);
+  const member = memberRows[0];
+  const profile = profileRows[0];
+  const wallet = walletRows[0];
   const referralMetrics = referralRows.reduce((acc, row) => ({ ...acc, [row.status]: Number(row.count) }), {} as Record<string, number>);
   return {
     memberUid: member?.memberUid ?? null,
@@ -425,7 +422,7 @@ export async function getMemberSummary(userId: number) {
     activeMultiplier,
     dailyCheckin: latestCheckin[0] ?? null,
     weeklyProgress: { completedDays: week[0]?.progressDays ?? 0, requiredDays: settings, completed: Boolean(week[0]?.completedAt) },
-    referral: { total: (referralMetrics.pending ?? 0) + (referralMetrics.qualified ?? 0), qualified: referralMetrics.qualified ?? 0, points: Number(referralPoints[0]?.total ?? 0), code: await ensureReferralCode(userId) },
+    referral: { total: (referralMetrics.pending ?? 0) + (referralMetrics.qualified ?? 0), qualified: referralMetrics.qualified ?? 0, points: Number(referralPoints[0]?.total ?? 0), code: referralCode },
   };
 }
 

@@ -26,3 +26,4 @@
 - [x] Enhance the quest manager with supported social platform choices and recognizable X, Telegram, Discord, and Instagram platform avatars.
 - [x] Add automated coverage for multi-submission review history and supported social platform quest configuration, then complete authenticated visual verification.
 - [x] Create a temporary pending manual proof submission, verify the live per-submission Approve/Reject controls, reject it without points, and deactivate the temporary quest.
+- [ ] Diagnose and repair the authenticated dashboard tRPC request failure that appears as “Failed to fetch”.
