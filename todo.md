@@ -18,3 +18,4 @@
 - [x] Replace predictable account-derived referral codes with securely generated opaque random referral tokens, including migration, lookup, UI use, tests, and verification.
 - [ ] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
 - [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
+- [ ] Prevent cached authenticated profile responses from showing an obsolete member role after administrator sign-in and verify the published Admin Console refreshes correctly.
