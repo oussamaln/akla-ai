@@ -16,3 +16,5 @@
 - [x] Expand Vitest coverage for idempotency, referral protection, check-in limits, avatar validation, and quest approval rules.
 - [x] Save the final webdev checkpoint after the verified build and responsive screenshots pass.
 - [x] Replace predictable account-derived referral codes with securely generated opaque random referral tokens, including migration, lookup, UI use, tests, and verification.
+- [ ] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
+- [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
