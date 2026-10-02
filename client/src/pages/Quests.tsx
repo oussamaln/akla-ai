@@ -1,22 +1,279 @@
 import DashboardLayout from "@/components/DashboardLayout";
-import { ErrorCard, formatPoints, LoadingCard, PageHeader, StatusPill } from "@/components/AklaUi";
+import {
+  ErrorCard,
+  formatPoints,
+  LoadingCard,
+  PageHeader,
+  StatusPill,
+} from "@/components/AklaUi";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
-import { ArrowUpRight, BookOpen, CheckCircle2, Clock3, Compass, Trophy } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  CheckCircle2,
+  Clock3,
+  Compass,
+  Trophy,
+} from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 
-const categoryInfo = { social: { label: "Proof of Social", icon: Compass, copy: "Connect with the people and channels that move Akla forward." }, presence: { label: "Proof of Presence", icon: CheckCircle2, copy: "Show up consistently and grow your momentum through activity." }, passage: { label: "Proof of Passage", icon: Trophy, copy: "Prepare for future cross-chain and interoperability experiences." } };
+const categoryInfo = {
+  social: {
+    label: "Proof of Social",
+    icon: Compass,
+    copy: "Connect with the people and channels that move Akla forward.",
+  },
+  presence: {
+    label: "Proof of Presence",
+    icon: CheckCircle2,
+    copy: "Show up consistently and grow your momentum through activity.",
+  },
+  passage: {
+    label: "Proof of Passage",
+    icon: Trophy,
+    copy: "Prepare for future cross-chain and interoperability experiences.",
+  },
+};
 
 export default function Quests() {
   const board = trpc.member.questBoard.useQuery();
   const config = trpc.member.configuration.useQuery();
   const utils = trpc.useUtils();
-  const claim = trpc.member.quests.claim.useMutation({ onSuccess: result => { toast.success(result.transaction ? `Reward recorded: +${formatPoints(result.transaction.finalPoints)} points.` : "Submitted for verification."); utils.member.questBoard.invalidate(); utils.member.summary.invalidate(); }, onError: error => toast.error(error.message) });
-  if (board.isLoading) return <DashboardLayout><LoadingCard label="Loading available quests…" /></DashboardLayout>;
-  if (board.error || !board.data) return <DashboardLayout><ErrorCard message={board.error?.message || "Quests could not be loaded."} /></DashboardLayout>;
-  const grouped = (Object.keys(categoryInfo) as Array<keyof typeof categoryInfo>).map(category => ({ category, quests: board.data.filter(quest => quest.category === category) }));
-  return <DashboardLayout><PageHeader eyebrow="Start earning" title="Build your Network Score" description="Past and future qualifying activity contributes to one continuous Akla AI score. Standard quests begin at 200 base points, before any active multiplier applies." action={config.data?.readTheDocsUrl ? <a href={config.data.readTheDocsUrl} target="_blank" rel="noreferrer"><Button variant="outline" className="border-white/10 text-slate-200 hover:bg-white/[0.06]"><BookOpen className="mr-2 h-4 w-4" />Read the docs</Button></a> : undefined} />
-    <div className="mb-8 grid gap-3 sm:grid-cols-3">{grouped.map(({ category, quests }) => { const info = categoryInfo[category]; const Icon = info.icon; const completed = quests.filter(quest => quest.completion?.status === "verified").length; return <div key={category} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"><div className="flex items-center justify-between"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-400/10 text-violet-200"><Icon className="h-4 w-4" /></span><span className="text-xs text-slate-500">{completed}/{quests.length}</span></div><p className="mt-4 text-sm font-medium text-white">{info.label}</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-violet-400" style={{ width: `${quests.length ? completed / quests.length * 100 : 0}%` }} /></div></div>; })}</div>
-    <div className="space-y-10">{grouped.map(({ category, quests }) => { const info = categoryInfo[category]; const Icon = info.icon; return <section key={category}><div className="mb-4 flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-violet-200"><Icon className="h-4 w-4" /></span><div><h2 className="font-display text-xl font-semibold text-white">{info.label}</h2><p className="mt-0.5 text-xs text-slate-500">{info.copy}</p></div></div><div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{quests.map(quest => <article key={quest.id} className="panel-surface flex min-h-[265px] flex-col p-5"><div className="flex items-start justify-between gap-4"><div className="rounded-xl bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">+{formatPoints(quest.basePoints)} {quest.isPremium ? "premium" : "base"}</div>{quest.completion ? <StatusPill status={quest.completion.status} /> : <span className="text-xs text-slate-600">Available</span>}</div><h3 className="mt-5 font-display text-xl font-semibold tracking-[-.035em] text-white">{quest.title}</h3><p className="mt-2 flex-1 text-sm leading-6 text-slate-400">{quest.description}</p><div className="mt-5 flex items-center gap-2"><Button disabled={claim.isPending || Boolean(quest.completion)} onClick={() => claim.mutate({ questId: quest.id, idempotencyKey: crypto.randomUUID() })} className="flex-1 bg-violet-500 text-white hover:bg-violet-400">{quest.completion?.status === "pending" ? "Under review" : quest.completion?.status === "verified" ? "Completed" : quest.verificationType === "manual" ? "Submit proof" : "Claim reward"}</Button>{quest.ctaUrl && <a aria-label={`Open ${quest.title}`} href={quest.ctaUrl} target="_blank" rel="noreferrer"><Button size="icon" variant="outline" className="border-white/10 text-slate-300 hover:bg-white/[0.07]"><ArrowUpRight className="h-4 w-4" /></Button></a>}</div>{quest.verificationType === "manual" && !quest.completion && <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500"><Clock3 className="h-3 w-3" />Manual verification required</p>}</article>)}</div></section>; })}</div>
-  </DashboardLayout>;
+  const [handles, setHandles] = useState<Record<number, string>>({});
+  const claim = trpc.member.quests.claim.useMutation({
+    onSuccess: result => {
+      toast.success(
+        result.transaction
+          ? `Reward recorded: +${formatPoints(result.transaction.finalPoints)} points.`
+          : "Submitted for verification."
+      );
+      utils.member.questBoard.invalidate();
+      utils.member.summary.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  if (board.isLoading)
+    return (
+      <DashboardLayout>
+        <LoadingCard label="Loading available quests…" />
+      </DashboardLayout>
+    );
+  if (board.error || !board.data)
+    return (
+      <DashboardLayout>
+        <ErrorCard
+          message={board.error?.message || "Quests could not be loaded."}
+        />
+      </DashboardLayout>
+    );
+  const grouped = (
+    Object.keys(categoryInfo) as Array<keyof typeof categoryInfo>
+  ).map(category => ({
+    category,
+    quests: board.data.filter(quest => quest.category === category),
+  }));
+  return (
+    <DashboardLayout>
+      <PageHeader
+        eyebrow="Start earning"
+        title="Build your Network Score"
+        description="Past and future qualifying activity contributes to one continuous Akla AI score. Standard quests begin at 200 base points, before any active multiplier applies."
+        action={
+          config.data?.readTheDocsUrl ? (
+            <a
+              href={config.data.readTheDocsUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Button
+                variant="outline"
+                className="border-white/10 text-slate-200 hover:bg-white/[0.06]"
+              >
+                <BookOpen className="mr-2 h-4 w-4" />
+                Read the docs
+              </Button>
+            </a>
+          ) : undefined
+        }
+      />
+      <div className="mb-8 grid gap-3 sm:grid-cols-3">
+        {grouped.map(({ category, quests }) => {
+          const info = categoryInfo[category];
+          const Icon = info.icon;
+          const completed = quests.filter(
+            quest => quest.completion?.status === "verified"
+          ).length;
+          return (
+            <div
+              key={category}
+              className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"
+            >
+              <div className="flex items-center justify-between">
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-400/10 text-violet-200">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="text-xs text-slate-500">
+                  {completed}/{quests.length}
+                </span>
+              </div>
+              <p className="mt-4 text-sm font-medium text-white">
+                {info.label}
+              </p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                  className="h-full rounded-full bg-violet-400"
+                  style={{
+                    width: `${quests.length ? (completed / quests.length) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="space-y-10">
+        {grouped.map(({ category, quests }) => {
+          const info = categoryInfo[category];
+          const Icon = info.icon;
+          return (
+            <section key={category}>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-violet-200">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="font-display text-xl font-semibold text-white">
+                    {info.label}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">{info.copy}</p>
+                </div>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {quests.map(quest => (
+                  <article
+                    key={quest.id}
+                    className="panel-surface flex min-h-[265px] flex-col p-5"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="rounded-xl bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                        +{formatPoints(quest.basePoints)}{" "}
+                        {quest.isPremium ? "premium" : "base"}
+                      </div>
+                      {quest.completion ? (
+                        <StatusPill status={quest.completion.status} />
+                      ) : (
+                        <span className="text-xs text-slate-600">
+                          Available
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-5 font-display text-xl font-semibold tracking-[-.035em] text-white">
+                      {quest.title}
+                    </h3>
+                    <p className="mt-2 flex-1 text-sm leading-6 text-slate-400">
+                      {quest.description}
+                    </p>
+                    <div className="mt-5 flex items-center gap-2">
+                      <Button
+                        onClick={() =>
+                          claim.mutate({
+                            questId: quest.id,
+                            idempotencyKey: crypto.randomUUID(),
+                            identityHandle: quest.platform
+                              ? (handles[quest.id] ?? quest.savedHandle ?? "")
+                              : undefined,
+                          })
+                        }
+                        disabled={
+                          claim.isPending ||
+                          Boolean(quest.completion) ||
+                          Boolean(
+                            quest.platform &&
+                              !(
+                                handles[quest.id] ??
+                                quest.savedHandle ??
+                                ""
+                              ).trim()
+                          )
+                        }
+                        className="flex-1 bg-violet-500 text-white hover:bg-violet-400"
+                      >
+                        {quest.completion?.status === "pending"
+                          ? "Under review"
+                          : quest.completion?.status === "verified"
+                            ? "Completed"
+                            : quest.verificationType === "manual"
+                              ? "Submit proof"
+                              : "Claim reward"}
+                      </Button>
+                      {quest.ctaUrl && (
+                        <a
+                          aria-label={`Open ${quest.title}`}
+                          href={quest.ctaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="border-white/10 text-slate-300 hover:bg-white/[0.07]"
+                          >
+                            <ArrowUpRight className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      )}
+                    </div>
+                    {quest.platform && !quest.completion && (
+                      <label className="mt-4 block">
+                        <span className="mb-1.5 block text-xs font-medium text-slate-300">
+                          {quest.platform === "x"
+                            ? "X username"
+                            : quest.platform === "email"
+                              ? "Email address"
+                              : `${quest.platform[0].toUpperCase()}${quest.platform.slice(1)} username`}
+                        </span>
+                        <Input
+                          value={handles[quest.id] ?? quest.savedHandle ?? ""}
+                          onChange={event =>
+                            setHandles(current => ({
+                              ...current,
+                              [quest.id]: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            quest.platform === "email"
+                              ? "you@example.com"
+                              : `Your ${quest.platform} username`
+                          }
+                          autoComplete="off"
+                          className="field-dark h-11"
+                          aria-describedby={`quest-${quest.id}-identity-help`}
+                        />
+                        <span
+                          id={`quest-${quest.id}-identity-help`}
+                          className="mt-1.5 block text-[11px] leading-4 text-slate-500"
+                        >
+                          Submit the identity you used so the Akla team can
+                          verify this task.
+                        </span>
+                      </label>
+                    )}
+                    {quest.verificationType === "manual" && (
+                      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <Clock3 className="h-3 w-3" />
+                        Manual verification required
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </DashboardLayout>
+  );
 }

@@ -1,29 +1,4 @@
-# Project TODO
 
-- [x] Establish the Akla AI visual design system, responsive application shell, and accessible navigation for member and admin areas.
-- [x] Add a complete rewards-domain schema for profiles, wallets, social identities, quests, completions, immutable point transactions, check-ins, referrals, referral rewards, multiplier history, campaigns, leaderboard snapshots, and configurable settings.
-- [x] Apply database migration SQL and keep the Drizzle schema synchronized with the live database.
-- [x] Implement server-side profile, wallet, social identity, and PFP metadata validation, including Ethereum-address validation and S3-backed upload support.
-- [x] Implement a configurable quest engine with Proof of Social, Proof of Presence, and Proof of Passage categories; enforce a 200-point minimum for standard quests and support premium rewards.
-- [x] Implement idempotent, immutable point ledger writes that retain source, source ID, base points, active multiplier, final points, and timestamp, with distinct referral reward events.
-- [x] Implement non-stacking multiplier tiers of 1.0×, 1.2×, 1.5×, and 2.0×, retaining unlock history and applying the highest unlocked tier only to qualifying future earnings.
-- [x] Implement daily and weekly check-ins with server-side limits, configurable rewards, consistent UTC rules, and streak metrics.
-- [x] Implement referral links, profile-completion qualification, self-referral and cycle protection, configurable 15% / 10% / 5% tier rewards, and referral progress metrics.
-- [x] Implement global, weekly, monthly, and referral leaderboards with pagination, current-user highlighting, and privacy-conscious output.
-- [x] Add explicit empty states to the Dashboard, Referrals, and Edit Profile experiences where member data is absent or incomplete, then verify their core state coverage.
-- [x] Build a role-gated admin console with operational overview metrics, point audit views, user/referral inspection, social account configuration, and quest/multiplier/campaign/settings management.
-- [x] Add server-side rate limits to the remaining sensitive administrative configuration mutations.
-- [x] Expand Vitest coverage for idempotency, referral protection, check-in limits, avatar validation, and quest approval rules.
-- [x] Save the final webdev checkpoint after the verified build and responsive screenshots pass.
-- [x] Replace predictable account-derived referral codes with securely generated opaque random referral tokens, including migration, lookup, UI use, tests, and verification.
-- [x] Diagnose and correct the current authenticated account’s administrator role so the Admin Console is accessible.
-- [x] Prevent duplicate OAuth sign-in initiation from overwriting the one-time state cookie and blocking administrator login.
-- [x] Force a fresh `auth.me` query on mount after sign-in so the client cannot retain a stale member role, then verify the published Admin Console refreshes correctly.
-- [x] Preserve existing elevated user roles during OAuth authentication upserts so administrator access is not reset to member.
-- [x] Add an immutable auto-generated UID for each new member and display it on the member profile.
-- [x] Return every quest submission for a selected member, preserving repeated quest attempts and all current task states in the UID- and username-searchable review detail.
-- [x] Verify the user-list-first manual proof review flow while authenticated, including UID and username search plus per-submission approval or rejection.
-- [x] Enhance the quest manager with supported social platform choices and recognizable X, Telegram, Discord, and Instagram platform avatars.
-- [x] Add automated coverage for multi-submission review history and supported social platform quest configuration, then complete authenticated visual verification.
-- [x] Create a temporary pending manual proof submission, verify the live per-submission Approve/Reject controls, reject it without points, and deactivate the temporary quest.
-- [x] Diagnose and repair the authenticated dashboard tRPC request failure that appears as “Failed to fetch”.
+- [ ] Fix mobile sidebar opacity and content contrast.
+- [ ] Add per-quest social identity fields and server validation for X, Telegram, Discord, Instagram, and email-style tasks.
+- [ ] Run typecheck, tests, build, and responsive QA.

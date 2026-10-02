@@ -17,20 +17,49 @@ import {
   wouldCreateReferralCycle,
   shouldAwardWeeklyCheckin,
 } from "../shared/rewards";
-import { buildQuestHistory, isOpaqueReferralCode, makeReferralCode } from "./rewards";
+import {
+  buildQuestHistory,
+  isOpaqueReferralCode,
+  makeReferralCode,
+  normalizeQuestIdentity,
+} from "./rewards";
 import { makeMemberUid, resolveRoleAssignment } from "./db";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 describe("Akla reward rules", () => {
   it("rejects standard earning quests below the mandatory 200-point minimum", () => {
-    expect(() => validateQuestReward({ basePoints: 199, questType: "standard", isPremium: false })).toThrow("at least 200");
-    expect(() => validateQuestReward({ basePoints: 150, questType: "daily", isPremium: false })).toThrow("at least 200");
-    expect(() => validateQuestReward({ basePoints: 200, questType: "weekly", isPremium: false })).not.toThrow();
+    expect(() =>
+      validateQuestReward({
+        basePoints: 199,
+        questType: "standard",
+        isPremium: false,
+      })
+    ).toThrow("at least 200");
+    expect(() =>
+      validateQuestReward({
+        basePoints: 150,
+        questType: "daily",
+        isPremium: false,
+      })
+    ).toThrow("at least 200");
+    expect(() =>
+      validateQuestReward({
+        basePoints: 200,
+        questType: "weekly",
+        isPremium: false,
+      })
+    ).not.toThrow();
   });
 
   it("accepts premium quest rewards above the standard floor", () => {
-    expect(() => validateQuestReward({ basePoints: 1000, questType: "premium", isPremium: true })).not.toThrow();
+    expect(() =>
+      validateQuestReward({
+        basePoints: 1000,
+        questType: "premium",
+        isPremium: true,
+      })
+    ).not.toThrow();
   });
 
   it("applies only the active tier multiplier to qualifying future earnings", () => {
@@ -54,7 +83,9 @@ describe("Akla reward rules", () => {
   });
 
   it("validates Ethereum wallet shape before persistence", () => {
-    expect(isValidEthereumAddress("0x1234567890abcdef1234567890ABCDEF12345678")).toBe(true);
+    expect(
+      isValidEthereumAddress("0x1234567890abcdef1234567890ABCDEF12345678")
+    ).toBe(true);
     expect(isValidEthereumAddress("0x1234")).toBe(false);
   });
 
@@ -77,28 +108,62 @@ describe("Akla reward rules", () => {
   });
 
   it("retains every submission for a selected member instead of collapsing repeat attempts", () => {
-    const history = buildQuestHistory([{ id: 1, title: "Daily proof" }, { id: 2, title: "Discord proof" }], [
-      { id: 10, questId: 1, status: "verified" },
-      { id: 11, questId: 1, status: "pending" },
-      { id: 12, questId: 2, status: "rejected" },
-    ]);
+    const history = buildQuestHistory(
+      [
+        { id: 1, title: "Daily proof" },
+        { id: 2, title: "Discord proof" },
+      ],
+      [
+        { id: 10, questId: 1, status: "verified" },
+        { id: 11, questId: 1, status: "pending" },
+        { id: 12, questId: 2, status: "rejected" },
+      ]
+    );
     expect(history[0]?.submissions).toHaveLength(2);
-    expect(history[0]?.submissions.map(submission => submission.id)).toEqual([10, 11]);
+    expect(history[0]?.submissions.map(submission => submission.id)).toEqual([
+      10, 11,
+    ]);
     expect(history[1]?.submissions).toHaveLength(1);
   });
 
   it("keeps all required social platforms available to quest configuration", () => {
-    expect(SUPPORTED_SOCIAL_QUEST_PLATFORMS).toEqual(["x", "telegram", "discord", "instagram"]);
+    expect(SUPPORTED_SOCIAL_QUEST_PLATFORMS).toEqual([
+      "x",
+      "telegram",
+      "discord",
+      "instagram",
+    ]);
+  });
+
+  it("requires and normalizes the identity submitted for a social quest", () => {
+    expect(normalizeQuestIdentity("x", "  @akla_ai  ")).toEqual({
+      platform: "x",
+      handle: "@akla_ai",
+    });
+    expect(() => normalizeQuestIdentity("discord", "")).toThrow(
+      "discord username"
+    );
+    expect(() => normalizeQuestIdentity("email", "not-an-email")).toThrow(
+      "valid email"
+    );
+    expect(normalizeQuestIdentity(undefined, undefined)).toBeNull();
   });
 
   it("identifies duplicate idempotency keys before a ledger reward is created twice", () => {
-    expect(isDuplicateIdempotencyKey(["quest:101", "daily:42:2026-08-26"], "quest:101")).toBe(true);
+    expect(
+      isDuplicateIdempotencyKey(
+        ["quest:101", "daily:42:2026-08-26"],
+        "quest:101"
+      )
+    ).toBe(true);
     expect(isDuplicateIdempotencyKey(["quest:101"], "quest:102")).toBe(false);
   });
 
   it("detects duplicate daily or weekly UTC period claims", () => {
     expect(hasAlreadyClaimedUtcPeriod(["2026-08-26"], "2026-08-26")).toBe(true);
-    expect(hasAlreadyClaimedUtcPeriod(["2026-08-26"], "2026-08-27")).toBe(false);
+    expect(hasAlreadyClaimedUtcPeriod(["2026-08-26"], "2026-08-27")).toBe(
+      false
+    );
   });
 
   it("blocks referral cycles before a referral relationship is persisted", () => {
@@ -109,8 +174,23 @@ describe("Akla reward rules", () => {
   });
 
   it("qualifies referrals only after the required profile identity is complete", () => {
-    expect(isProfileQualificationEligible({ username: "member-1", fullName: "Akla Member", dateOfBirth: "1990-01-01", country: "US", walletAddress: "0x123" })).toBe(true);
-    expect(isProfileQualificationEligible({ username: "member-1", fullName: "Akla Member", country: "US", walletAddress: "0x123" })).toBe(false);
+    expect(
+      isProfileQualificationEligible({
+        username: "member-1",
+        fullName: "Akla Member",
+        dateOfBirth: "1990-01-01",
+        country: "US",
+        walletAddress: "0x123",
+      })
+    ).toBe(true);
+    expect(
+      isProfileQualificationEligible({
+        username: "member-1",
+        fullName: "Akla Member",
+        country: "US",
+        walletAddress: "0x123",
+      })
+    ).toBe(false);
   });
 
   it("awards a weekly check-in only after progress reaches the configured threshold and only once", () => {
@@ -133,9 +213,16 @@ describe("Akla reward rules", () => {
 
   it("accepts signed image payloads only when their MIME declaration and bytes agree", () => {
     const png = "data:image/png;base64,iVBORw0KGgo=";
-    expect(validateAvatarPayload(png)).toMatchObject({ mimeType: "image/png", extension: "png" });
-    expect(() => validateAvatarPayload("data:image/png;base64,/9j/")).toThrow("does not match");
-    expect(() => validateAvatarPayload("data:image/gif;base64,R0lGODlh")).toThrow("PNG, JPEG, or WebP");
+    expect(validateAvatarPayload(png)).toMatchObject({
+      mimeType: "image/png",
+      extension: "png",
+    });
+    expect(() => validateAvatarPayload("data:image/png;base64,/9j/")).toThrow(
+      "does not match"
+    );
+    expect(() =>
+      validateAvatarPayload("data:image/gif;base64,R0lGODlh")
+    ).toThrow("PNG, JPEG, or WebP");
   });
 
   it("blocks a standard member from the admin rewards console", async () => {
@@ -154,6 +241,8 @@ describe("Akla reward rules", () => {
       req: {} as TrpcContext["req"],
       res: {} as TrpcContext["res"],
     } as TrpcContext;
-    await expect(appRouter.createCaller(ctx).admin.overview()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      appRouter.createCaller(ctx).admin.overview()
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
