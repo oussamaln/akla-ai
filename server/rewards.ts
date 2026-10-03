@@ -33,6 +33,7 @@ import {
   utcWeekKey,
   validateAvatarPayload,
   shouldAwardWeeklyCheckin,
+  walletVerificationStateAfterAddressChange,
   wouldCreateReferralCycle,
 } from "../shared/rewards";
 import { randomBytes } from "node:crypto";
@@ -173,6 +174,19 @@ const DEFAULT_QUESTS: DefaultQuest[] = [
     ctaLabel: "Verify participation",
   },
   {
+    slug: "hold-target-token",
+    title: "Hold the Akla passage token",
+    description:
+      "Hold the configured ERC-20 token on Robinhood Chain Testnet to prove on-chain passage and earn existing Akla points.",
+    category: "passage" as const,
+    questType: "premium" as const,
+    verificationType: "onchain" as const,
+    basePoints: 500,
+    isPremium: true,
+    active: false,
+    ctaLabel: "Verify on-chain",
+  },
+  {
     slug: "bridge-pioneer",
     title: "Become a passage pioneer",
     description:
@@ -203,7 +217,7 @@ type PointAward = {
   propagateReferralRewards?: boolean;
 };
 
-function requireDatabase<T>(db: T | null): T {
+export function requireDatabase<T>(db: T | null): T {
   if (!db)
     throw new Error("Database is unavailable. Please try again shortly.");
   return db;
@@ -704,15 +718,32 @@ export async function updateMemberProfile(input: {
     .where(eq(profiles.userId, input.userId));
   if (input.walletAddress?.trim()) {
     const address = input.walletAddress.trim();
+    const existingWallet = await db
+      .select({
+        normalizedAddress: wallets.normalizedAddress,
+        verificationState: wallets.verificationState,
+      })
+      .from(wallets)
+      .where(eq(wallets.userId, input.userId))
+      .limit(1);
+    const verificationState = walletVerificationStateAfterAddressChange(
+      existingWallet[0],
+      address
+    );
     await db
       .insert(wallets)
       .values({
         userId: input.userId,
         address,
         normalizedAddress: address.toLowerCase(),
+        verificationState,
       })
       .onDuplicateKeyUpdate({
-        set: { address, normalizedAddress: address.toLowerCase() },
+        set: {
+          address,
+          normalizedAddress: address.toLowerCase(),
+          verificationState,
+        },
       });
   }
   for (const [platform, rawHandle] of Object.entries(

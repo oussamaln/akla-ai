@@ -14,6 +14,12 @@ import {
 } from "../../shared/rewards";
 import { getDb } from "../db";
 import {
+  createWalletChallenge,
+  getWeb3Status,
+  verifyTokenHolder,
+  verifyWalletOwnership,
+} from "../web3";
+import {
   attachReferral,
   enforceRateLimit,
   ensureDefaultConfiguration,
@@ -139,6 +145,34 @@ export const memberRouter = router({
       const weekly = await recordWeeklyProgress(ctx.user.id);
       return { daily, weekly };
     }),
+  }),
+  passage: router({
+    status: protectedProcedure.query(({ ctx }) => getWeb3Status(ctx.user.id)),
+    challenge: protectedProcedure
+      .input(
+        z.object({
+          address: z.string().trim().min(42).max(42),
+          chainId: z.number().int(),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        createWalletChallenge(ctx.user.id, input.address, input.chainId)
+      ),
+    verifyWallet: protectedProcedure
+      .input(
+        z.object({
+          address: z.string().trim().min(42).max(42),
+          chainId: z.number().int(),
+          nonce: z.string().trim().min(32).max(64),
+          signature: z.string().regex(/^0x[0-9a-fA-F]+$/),
+        })
+      )
+      .mutation(({ ctx, input }) => verifyWalletOwnership(ctx.user.id, input)),
+    verifyToken: protectedProcedure
+      .input(z.object({ address: z.string().trim().min(42).max(42) }))
+      .mutation(({ ctx, input }) =>
+        verifyTokenHolder(ctx.user.id, input.address)
+      ),
   }),
   referrals: router({
     attach: protectedProcedure

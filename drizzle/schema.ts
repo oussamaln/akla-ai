@@ -12,18 +12,22 @@ import {
   varchar,
 } from "drizzle-orm/mysql-core";
 
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  memberUid: varchar("memberUid", { length: 20 }),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-}, table => [uniqueIndex("users_member_uid_unique").on(table.memberUid)]);
+export const users = mysqlTable(
+  "users",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    memberUid: varchar("memberUid", { length: 20 }),
+    openId: varchar("openId", { length: 64 }).notNull().unique(),
+    name: text("name"),
+    email: varchar("email", { length: 320 }),
+    loginMethod: varchar("loginMethod", { length: 64 }),
+    role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  },
+  table => [uniqueIndex("users_member_uid_unique").on(table.memberUid)]
+);
 
 export const profiles = mysqlTable(
   "profiles",
@@ -44,7 +48,7 @@ export const profiles = mysqlTable(
   table => [
     uniqueIndex("profiles_user_id_unique").on(table.userId),
     uniqueIndex("profiles_username_unique").on(table.username),
-  ],
+  ]
 );
 
 export const wallets = mysqlTable(
@@ -54,7 +58,10 @@ export const wallets = mysqlTable(
     userId: int("userId").notNull(),
     address: varchar("address", { length: 42 }).notNull(),
     normalizedAddress: varchar("normalizedAddress", { length: 42 }).notNull(),
-    verificationState: mysqlEnum("verificationState", ["unverified", "verified"])
+    verificationState: mysqlEnum("verificationState", [
+      "unverified",
+      "verified",
+    ])
       .default("unverified")
       .notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -62,8 +69,10 @@ export const wallets = mysqlTable(
   },
   table => [
     uniqueIndex("wallets_user_id_unique").on(table.userId),
-    uniqueIndex("wallets_normalized_address_unique").on(table.normalizedAddress),
-  ],
+    uniqueIndex("wallets_normalized_address_unique").on(
+      table.normalizedAddress
+    ),
+  ]
 );
 
 export const socialAccounts = mysqlTable(
@@ -71,16 +80,31 @@ export const socialAccounts = mysqlTable(
   {
     id: int("id").autoincrement().primaryKey(),
     userId: int("userId").notNull(),
-    platform: mysqlEnum("platform", ["x", "telegram", "discord", "instagram", "email"]).notNull(),
+    platform: mysqlEnum("platform", [
+      "x",
+      "telegram",
+      "discord",
+      "instagram",
+      "email",
+    ]).notNull(),
     handle: varchar("handle", { length: 320 }).notNull(),
-    verificationState: mysqlEnum("verificationState", ["unverified", "manual", "verified"])
+    verificationState: mysqlEnum("verificationState", [
+      "unverified",
+      "manual",
+      "verified",
+    ])
       .default("manual")
       .notNull(),
     verifiedAt: timestamp("verifiedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("social_accounts_user_platform_unique").on(table.userId, table.platform)],
+  table => [
+    uniqueIndex("social_accounts_user_platform_unique").on(
+      table.userId,
+      table.platform
+    ),
+  ]
 );
 
 export const quests = mysqlTable(
@@ -90,9 +114,27 @@ export const quests = mysqlTable(
     slug: varchar("slug", { length: 96 }).notNull(),
     title: varchar("title", { length: 160 }).notNull(),
     description: text("description").notNull(),
-    category: mysqlEnum("category", ["social", "presence", "passage"]).notNull(),
-    questType: mysqlEnum("questType", ["standard", "premium", "daily", "weekly", "manual"]).default("standard").notNull(),
-    verificationType: mysqlEnum("verificationType", ["manual", "oauth", "api", "onchain", "system"])
+    category: mysqlEnum("category", [
+      "social",
+      "presence",
+      "passage",
+    ]).notNull(),
+    questType: mysqlEnum("questType", [
+      "standard",
+      "premium",
+      "daily",
+      "weekly",
+      "manual",
+    ])
+      .default("standard")
+      .notNull(),
+    verificationType: mysqlEnum("verificationType", [
+      "manual",
+      "oauth",
+      "api",
+      "onchain",
+      "system",
+    ])
       .default("manual")
       .notNull(),
     platform: varchar("platform", { length: 64 }),
@@ -112,7 +154,7 @@ export const quests = mysqlTable(
   table => [
     uniqueIndex("quests_slug_unique").on(table.slug),
     index("quests_active_category_idx").on(table.active, table.category),
-  ],
+  ]
 );
 
 export const questCompletions = mysqlTable(
@@ -132,9 +174,11 @@ export const questCompletions = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("quest_completions_idempotency_key_unique").on(table.idempotencyKey),
+    uniqueIndex("quest_completions_idempotency_key_unique").on(
+      table.idempotencyKey
+    ),
     index("quest_completions_user_quest_idx").on(table.userId, table.questId),
-  ],
+  ]
 );
 
 export const pointTransactions = mysqlTable(
@@ -142,21 +186,37 @@ export const pointTransactions = mysqlTable(
   {
     id: int("id").autoincrement().primaryKey(),
     userId: int("userId").notNull(),
-    source: mysqlEnum("source", ["quest", "daily_checkin", "weekly_checkin", "referral_reward", "admin_adjustment", "campaign"])
-      .notNull(),
+    source: mysqlEnum("source", [
+      "quest",
+      "daily_checkin",
+      "weekly_checkin",
+      "referral_reward",
+      "admin_adjustment",
+      "campaign",
+    ]).notNull(),
     sourceId: varchar("sourceId", { length: 128 }).notNull(),
     basePoints: int("basePoints").notNull(),
-    activeMultiplier: decimal("activeMultiplier", { precision: 4, scale: 2 }).notNull(),
+    activeMultiplier: decimal("activeMultiplier", {
+      precision: 4,
+      scale: 2,
+    }).notNull(),
     finalPoints: int("finalPoints").notNull(),
-    qualifiesForMultiplier: boolean("qualifiesForMultiplier").default(true).notNull(),
+    qualifiesForMultiplier: boolean("qualifiesForMultiplier")
+      .default(true)
+      .notNull(),
     idempotencyKey: varchar("idempotencyKey", { length: 160 }).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("point_transactions_idempotency_key_unique").on(table.idempotencyKey),
-    index("point_transactions_user_created_idx").on(table.userId, table.createdAt),
+    uniqueIndex("point_transactions_idempotency_key_unique").on(
+      table.idempotencyKey
+    ),
+    index("point_transactions_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
     index("point_transactions_source_idx").on(table.source, table.sourceId),
-  ],
+  ]
 );
 
 export const dailyCheckins = mysqlTable(
@@ -171,9 +231,12 @@ export const dailyCheckins = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("daily_checkins_user_date_unique").on(table.userId, table.utcDateKey),
+    uniqueIndex("daily_checkins_user_date_unique").on(
+      table.userId,
+      table.utcDateKey
+    ),
     index("daily_checkins_user_created_idx").on(table.userId, table.createdAt),
-  ],
+  ]
 );
 
 export const weeklyCheckins = mysqlTable(
@@ -188,7 +251,12 @@ export const weeklyCheckins = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("weekly_checkins_user_week_unique").on(table.userId, table.utcWeekKey)],
+  table => [
+    uniqueIndex("weekly_checkins_user_week_unique").on(
+      table.userId,
+      table.utcWeekKey
+    ),
+  ]
 );
 
 export const referrals = mysqlTable(
@@ -199,14 +267,19 @@ export const referrals = mysqlTable(
     referredUserId: int("referredUserId").notNull(),
     referralCode: varchar("referralCode", { length: 32 }).notNull(),
     tier: int("tier").notNull(),
-    status: mysqlEnum("status", ["pending", "qualified", "blocked"]).default("pending").notNull(),
+    status: mysqlEnum("status", ["pending", "qualified", "blocked"])
+      .default("pending")
+      .notNull(),
     qualifiedAt: timestamp("qualifiedAt"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
     uniqueIndex("referrals_referred_user_unique").on(table.referredUserId),
-    index("referrals_referrer_status_idx").on(table.referrerUserId, table.status),
-  ],
+    index("referrals_referrer_status_idx").on(
+      table.referrerUserId,
+      table.status
+    ),
+  ]
 );
 
 export const referralCodes = mysqlTable(
@@ -221,7 +294,7 @@ export const referralCodes = mysqlTable(
   table => [
     uniqueIndex("referral_codes_user_unique").on(table.userId),
     uniqueIndex("referral_codes_code_unique").on(table.code),
-  ],
+  ]
 );
 
 export const referralRewards = mysqlTable(
@@ -230,15 +303,21 @@ export const referralRewards = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     referralId: int("referralId").notNull(),
     downstreamTransactionId: int("downstreamTransactionId").notNull(),
-    rewardPercentage: decimal("rewardPercentage", { precision: 5, scale: 2 }).notNull(),
+    rewardPercentage: decimal("rewardPercentage", {
+      precision: 5,
+      scale: 2,
+    }).notNull(),
     rewardPoints: int("rewardPoints").notNull(),
     pointTransactionId: int("pointTransactionId").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("referral_rewards_referral_downstream_unique").on(table.referralId, table.downstreamTransactionId),
+    uniqueIndex("referral_rewards_referral_downstream_unique").on(
+      table.referralId,
+      table.downstreamTransactionId
+    ),
     index("referral_rewards_transaction_idx").on(table.pointTransactionId),
-  ],
+  ]
 );
 
 export const multiplierLevels = mysqlTable(
@@ -257,7 +336,7 @@ export const multiplierLevels = mysqlTable(
   table => [
     uniqueIndex("multiplier_levels_code_unique").on(table.code),
     uniqueIndex("multiplier_levels_rank_unique").on(table.rank),
-  ],
+  ]
 );
 
 export const multiplierUnlocks = mysqlTable(
@@ -270,14 +349,24 @@ export const multiplierUnlocks = mysqlTable(
     unlockSource: varchar("unlockSource", { length: 128 }).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
-  table => [uniqueIndex("multiplier_unlocks_user_level_unique").on(table.userId, table.multiplierLevelId)],
+  table => [
+    uniqueIndex("multiplier_unlocks_user_level_unique").on(
+      table.userId,
+      table.multiplierLevelId
+    ),
+  ]
 );
 
 export const leaderboardSnapshots = mysqlTable(
   "leaderboard_snapshots",
   {
     id: int("id").autoincrement().primaryKey(),
-    scope: mysqlEnum("scope", ["global", "weekly", "monthly", "referral"]).notNull(),
+    scope: mysqlEnum("scope", [
+      "global",
+      "weekly",
+      "monthly",
+      "referral",
+    ]).notNull(),
     periodKey: varchar("periodKey", { length: 16 }).notNull(),
     userId: int("userId").notNull(),
     rank: int("rank").notNull(),
@@ -286,9 +375,17 @@ export const leaderboardSnapshots = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("leaderboard_snapshots_scope_period_user_unique").on(table.scope, table.periodKey, table.userId),
-    index("leaderboard_snapshots_scope_period_rank_idx").on(table.scope, table.periodKey, table.rank),
-  ],
+    uniqueIndex("leaderboard_snapshots_scope_period_user_unique").on(
+      table.scope,
+      table.periodKey,
+      table.userId
+    ),
+    index("leaderboard_snapshots_scope_period_rank_idx").on(
+      table.scope,
+      table.periodKey,
+      table.rank
+    ),
+  ]
 );
 
 export const campaigns = mysqlTable(
@@ -304,14 +401,26 @@ export const campaigns = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [index("campaigns_active_dates_idx").on(table.active, table.startsAt, table.endsAt)],
+  table => [
+    index("campaigns_active_dates_idx").on(
+      table.active,
+      table.startsAt,
+      table.endsAt
+    ),
+  ]
 );
 
 export const officialSocialAccounts = mysqlTable(
   "official_social_accounts",
   {
     id: int("id").autoincrement().primaryKey(),
-    platform: mysqlEnum("platform", ["x", "telegram", "discord", "instagram", "email"]).notNull(),
+    platform: mysqlEnum("platform", [
+      "x",
+      "telegram",
+      "discord",
+      "instagram",
+      "email",
+    ]).notNull(),
     handle: varchar("handle", { length: 320 }).notNull(),
     url: varchar("url", { length: 2048 }),
     active: boolean("active").default(true).notNull(),
@@ -319,7 +428,9 @@ export const officialSocialAccounts = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("official_social_accounts_platform_unique").on(table.platform)],
+  table => [
+    uniqueIndex("official_social_accounts_platform_unique").on(table.platform),
+  ]
 );
 
 export const appSettings = mysqlTable(
@@ -332,7 +443,7 @@ export const appSettings = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("app_settings_key_unique").on(table.key)],
+  table => [uniqueIndex("app_settings_key_unique").on(table.key)]
 );
 
 export const rateLimitWindows = mysqlTable(
@@ -345,7 +456,13 @@ export const rateLimitWindows = mysqlTable(
     requestCount: int("requestCount").default(0).notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("rate_limit_windows_user_action_window_unique").on(table.userId, table.action, table.windowStart)],
+  table => [
+    uniqueIndex("rate_limit_windows_user_action_window_unique").on(
+      table.userId,
+      table.action,
+      table.windowStart
+    ),
+  ]
 );
 
 export const adminAuditLogs = mysqlTable(
@@ -359,7 +476,58 @@ export const adminAuditLogs = mysqlTable(
     metadata: json("metadata"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
-  table => [index("admin_audit_logs_admin_created_idx").on(table.adminUserId, table.createdAt)],
+  table => [
+    index("admin_audit_logs_admin_created_idx").on(
+      table.adminUserId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const web3Challenges = mysqlTable(
+  "web3_challenges",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    address: varchar("address", { length: 42 }).notNull(),
+    nonce: varchar("nonce", { length: 64 }).notNull(),
+    message: text("message").notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    usedAt: timestamp("usedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("web3_challenges_nonce_unique").on(table.nonce),
+    index("web3_challenges_user_idx").on(table.userId, table.createdAt),
+  ]
+);
+
+export const web3Verifications = mysqlTable(
+  "web3_verifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    questId: int("questId").notNull(),
+    walletAddress: varchar("walletAddress", { length: 42 }).notNull(),
+    chainId: int("chainId").notNull(),
+    contractAddress: varchar("contractAddress", { length: 42 }).notNull(),
+    verifiedBalance: varchar("verifiedBalance", { length: 160 }).notNull(),
+    requiredBalance: varchar("requiredBalance", { length: 160 }).notNull(),
+    status: mysqlEnum("status", [
+      "verified",
+      "not_eligible",
+      "error",
+    ]).notNull(),
+    verificationData: json("verificationData"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    index("web3_verifications_user_quest_idx").on(
+      table.userId,
+      table.questId,
+      table.createdAt
+    ),
+  ]
 );
 
 export type User = typeof users.$inferSelect;

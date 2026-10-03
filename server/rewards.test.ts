@@ -14,6 +14,7 @@ import {
   utcWeekKey,
   validateAvatarPayload,
   validateQuestReward,
+  walletVerificationStateAfterAddressChange,
   wouldCreateReferralCycle,
   shouldAwardWeeklyCheckin,
 } from "../shared/rewards";
@@ -87,6 +88,33 @@ describe("Akla reward rules", () => {
       isValidEthereumAddress("0x1234567890abcdef1234567890ABCDEF12345678")
     ).toBe(true);
     expect(isValidEthereumAddress("0x1234")).toBe(false);
+  });
+
+  it("resets verified wallet ownership when a profile address changes", () => {
+    expect(
+      walletVerificationStateAfterAddressChange(
+        {
+          normalizedAddress: "0x1234567890abcdef1234567890abcdef12345678",
+          verificationState: "verified",
+        },
+        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+      )
+    ).toBe("unverified");
+    expect(
+      walletVerificationStateAfterAddressChange(
+        {
+          normalizedAddress: "0x1234567890abcdef1234567890abcdef12345678",
+          verificationState: "verified",
+        },
+        "0x1234567890ABCDEF1234567890abcdef12345678"
+      )
+    ).toBe("verified");
+    expect(
+      walletVerificationStateAfterAddressChange(
+        undefined,
+        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+      )
+    ).toBe("unverified");
   });
 
   it("creates opaque random referral tokens rather than account-derived codes", () => {
