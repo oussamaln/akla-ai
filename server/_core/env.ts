@@ -10,10 +10,4 @@ export const ENV = {
   robinhoodRpcUrl:
     process.env.ROBINHOOD_TESTNET_RPC_URL ??
     "https://rpc.testnet.chain.robinhood.com",
-  web3TargetTokenAddress: process.env.WEB3_TARGET_TOKEN_ADDRESS ?? "",
-  web3TargetTokenSymbol: process.env.WEB3_TARGET_TOKEN_SYMBOL ?? "",
-  web3TargetTokenDecimals: process.env.WEB3_TARGET_TOKEN_DECIMALS ?? "",
-  web3TargetTokenMinBalance: process.env.WEB3_TARGET_TOKEN_MIN_BALANCE ?? "",
-  web3TargetTokenRewardPoints:
-    process.env.WEB3_TARGET_TOKEN_REWARD_POINTS ?? "500",
 };

@@ -502,6 +502,33 @@ export const web3Challenges = mysqlTable(
   ]
 );
 
+export const web3TokenTasks = mysqlTable(
+  "web3_token_tasks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    questId: int("questId").notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    symbol: varchar("symbol", { length: 32 }).notNull(),
+    contractAddress: varchar("contractAddress", { length: 42 }).notNull(),
+    chainId: int("chainId").notNull(),
+    decimals: int("decimals").notNull(),
+    minimumBalance: varchar("minimumBalance", { length: 160 }).notNull(),
+    rewardPoints: int("rewardPoints").notNull(),
+    description: text("description").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("web3_token_tasks_quest_unique").on(table.questId),
+    uniqueIndex("web3_token_tasks_contract_chain_unique").on(
+      table.contractAddress,
+      table.chainId
+    ),
+    index("web3_token_tasks_active_idx").on(table.active, table.createdAt),
+  ]
+);
+
 export const web3Verifications = mysqlTable(
   "web3_verifications",
   {

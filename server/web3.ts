@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   createPublicClient,
   defineChain,
@@ -13,10 +13,13 @@ import {
 } from "viem";
 import {
   web3Challenges,
+  web3TokenTasks,
   web3Verifications,
   questCompletions,
   quests,
   wallets,
+  profiles,
+  users,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 import { ENV } from "./_core/env";
@@ -39,22 +42,7 @@ export const WEB3_CONFIG = {
   chainName: "Robinhood Chain Testnet",
   nativeSymbol: "ETH",
   rpcUrl: ENV.robinhoodRpcUrl,
-  tokenAddress:
-    ENV.web3TargetTokenAddress && isAddress(ENV.web3TargetTokenAddress)
-      ? getAddress(ENV.web3TargetTokenAddress)
-      : null,
-  tokenSymbol: ENV.web3TargetTokenSymbol || "TOKEN",
-  tokenDecimals: Number.isInteger(Number(ENV.web3TargetTokenDecimals))
-    ? Number(ENV.web3TargetTokenDecimals)
-    : null,
-  minimumBalance: ENV.web3TargetTokenMinBalance || "0",
-  rewardPoints: Math.max(200, Number(ENV.web3TargetTokenRewardPoints) || 500),
-  enabled: Boolean(
-    ENV.robinhoodRpcUrl &&
-      ENV.web3TargetTokenAddress &&
-      isAddress(ENV.web3TargetTokenAddress) &&
-      ENV.web3TargetTokenMinBalance
-  ),
+  enabled: Boolean(ENV.robinhoodRpcUrl),
 } as const;
 
 const ERC20_ABI = [
@@ -74,20 +62,53 @@ const ERC20_ABI = [
   },
 ] as const;
 
-function requireWeb3Config() {
-  if (!WEB3_CONFIG.enabled || !WEB3_CONFIG.tokenAddress) {
-    throw new Error(
-      "Proof of Passage is not configured yet. An administrator must configure the target token first."
-    );
-  }
-  return WEB3_CONFIG;
-}
-
 export function assertRobinhoodTestnet(chainId: number) {
   if (chainId !== WEB3_CONFIG.chainId)
     throw new Error(
       "Wallet verification must happen on Robinhood Chain Testnet."
     );
+}
+
+export function validateTokenTaskInput(input: {
+  name: string;
+  symbol: string;
+  contractAddress: string;
+  chainId: number;
+  decimals: number;
+  minimumBalance: string;
+  rewardPoints: number;
+  description: string;
+  active: boolean;
+}) {
+  assertRobinhoodTestnet(input.chainId);
+  if (!isAddress(input.contractAddress))
+    throw new Error("Enter a valid EVM token contract address.");
+  if (!input.name.trim() || !input.symbol.trim() || !input.description.trim())
+    throw new Error("Token name, symbol, and description are required.");
+  if (
+    !Number.isInteger(input.decimals) ||
+    input.decimals < 0 ||
+    input.decimals > 36
+  )
+    throw new Error("Token decimals must be an integer between 0 and 36.");
+  if (!Number.isFinite(input.rewardPoints) || input.rewardPoints < 200)
+    throw new Error("Proof of Passage rewards must be at least 200 points.");
+  try {
+    const minimum = parseUnits(input.minimumBalance.trim(), input.decimals);
+    if (minimum < BigInt(0)) throw new Error();
+  } catch {
+    throw new Error(
+      "Minimum balance must be a valid non-negative token amount."
+    );
+  }
+  return {
+    ...input,
+    name: input.name.trim(),
+    symbol: input.symbol.trim().toUpperCase(),
+    contractAddress: getAddress(input.contractAddress),
+    minimumBalance: input.minimumBalance.trim(),
+    description: input.description.trim(),
+  };
 }
 
 export function makeWalletChallengeMessage(
@@ -192,30 +213,68 @@ export async function verifyWalletOwnership(
 
 export async function getWeb3Status(userId: number) {
   const db = requireDatabase(await getDb());
-  const walletRows = await db
-    .select()
-    .from(wallets)
-    .where(eq(wallets.userId, userId))
-    .limit(1);
+  const [walletRows, tasks] = await Promise.all([
+    db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1),
+    db
+      .select()
+      .from(web3TokenTasks)
+      .where(eq(web3TokenTasks.active, true))
+      .orderBy(desc(web3TokenTasks.createdAt)),
+  ]);
   const wallet = walletRows[0];
   return {
     config: WEB3_CONFIG,
+    tasks,
     wallet: wallet
       ? { address: wallet.address, verificationState: wallet.verificationState }
       : null,
   };
 }
 
-export async function verifyTokenHolder(userId: number, rawAddress: string) {
+export async function getWeb3VerificationHistory() {
   const db = requireDatabase(await getDb());
-  const config = requireWeb3Config();
-  const tokenAddress = config.tokenAddress;
-  if (!tokenAddress)
-    throw new Error("The target token address is not configured.");
+  return db
+    .select({
+      id: web3Verifications.id,
+      userId: web3Verifications.userId,
+      username: profiles.username,
+      name: users.name,
+      questId: web3Verifications.questId,
+      taskName: quests.title,
+      walletAddress: web3Verifications.walletAddress,
+      contractAddress: web3Verifications.contractAddress,
+      chainId: web3Verifications.chainId,
+      verifiedBalance: web3Verifications.verifiedBalance,
+      requiredBalance: web3Verifications.requiredBalance,
+      status: web3Verifications.status,
+      verificationData: web3Verifications.verificationData,
+      createdAt: web3Verifications.createdAt,
+    })
+    .from(web3Verifications)
+    .innerJoin(quests, eq(web3Verifications.questId, quests.id))
+    .innerJoin(users, eq(web3Verifications.userId, users.id))
+    .leftJoin(profiles, eq(web3Verifications.userId, profiles.userId))
+    .orderBy(desc(web3Verifications.createdAt))
+    .limit(200);
+}
+
+export async function verifyTokenHolder(
+  userId: number,
+  taskId: number,
+  rawAddress: string
+) {
+  const db = requireDatabase(await getDb());
   if (!isAddress(rawAddress))
     throw new Error("Connect a valid EVM wallet before verifying.");
   const address = getAddress(rawAddress);
   await enforceRateLimit(userId, "web3_token_verify", 10, 60 * 60 * 1000);
+  const [task] = await db
+    .select()
+    .from(web3TokenTasks)
+    .where(and(eq(web3TokenTasks.id, taskId), eq(web3TokenTasks.active, true)))
+    .limit(1);
+  if (!task) throw new Error("This Proof of Passage task is not active.");
+  assertRobinhoodTestnet(task.chainId);
   const [wallet] = await db
     .select()
     .from(wallets)
@@ -229,21 +288,19 @@ export async function verifyTokenHolder(userId: number, rawAddress: string) {
     throw new Error(
       "Verify ownership of this wallet before checking token balance."
     );
-  await ensureDefaultConfiguration();
   const [quest] = await db
     .select()
     .from(quests)
-    .where(eq(quests.slug, "hold-target-token"))
+    .where(eq(quests.id, task.questId))
     .limit(1);
-  if (!quest)
-    throw new Error("The Proof of Passage token quest is unavailable.");
+  if (!quest) throw new Error("The Proof of Passage task is unavailable.");
   const existing = await db
     .select()
     .from(questCompletions)
     .where(
       and(
         eq(questCompletions.userId, userId),
-        eq(questCompletions.questId, quest.id)
+        eq(questCompletions.questId, task.questId)
       )
     )
     .limit(1);
@@ -253,25 +310,18 @@ export async function verifyTokenHolder(userId: number, rawAddress: string) {
       completion: existing[0],
       transaction: null,
       walletAddress: address,
-      chainId: config.chainId,
+      chainId: task.chainId,
+      taskId: task.id,
     } as const;
 
   const client = createPublicClient({
     chain: ROBINHOOD_TESTNET,
-    transport: http(config.rpcUrl),
+    transport: http(WEB3_CONFIG.rpcUrl),
   });
-  let decimals: number;
   let balance: bigint;
   try {
-    decimals = Number(
-      await client.readContract({
-        address: tokenAddress,
-        abi: ERC20_ABI,
-        functionName: "decimals",
-      })
-    );
     balance = await client.readContract({
-      address: tokenAddress,
+      address: getAddress(task.contractAddress),
       abi: ERC20_ABI,
       functionName: "balanceOf",
       args: [address],
@@ -281,30 +331,35 @@ export async function verifyTokenHolder(userId: number, rawAddress: string) {
       "The token contract could not be read on Robinhood Chain Testnet. Try again later."
     );
   }
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36)
-    throw new Error("The target token returned invalid decimals.");
-  const requiredRaw = parseUnits(config.minimumBalance, decimals);
-  const detectedBalance = formatUnits(balance, decimals);
+  if (
+    !Number.isInteger(task.decimals) ||
+    task.decimals < 0 ||
+    task.decimals > 36
+  )
+    throw new Error("The target token has invalid decimals.");
+  const requiredRaw = parseUnits(task.minimumBalance, task.decimals);
+  const detectedBalance = formatUnits(balance, task.decimals);
   const eligible = balance >= requiredRaw;
   const verificationData = {
     type: "TOKEN_HOLD",
     walletAddress: address,
-    chainId: config.chainId,
-    contractAddress: tokenAddress,
-    tokenSymbol: config.tokenSymbol,
-    tokenDecimals: decimals,
+    taskId: task.id,
+    chainId: task.chainId,
+    contractAddress: task.contractAddress,
+    tokenSymbol: task.symbol,
+    tokenDecimals: task.decimals,
     verifiedBalance: detectedBalance,
-    requiredBalance: config.minimumBalance,
+    requiredBalance: task.minimumBalance,
     verificationTimestamp: new Date().toISOString(),
   };
   await db.insert(web3Verifications).values({
     userId,
-    questId: quest.id,
+    questId: task.questId,
     walletAddress: address,
-    chainId: config.chainId,
-    contractAddress: tokenAddress,
+    chainId: task.chainId,
+    contractAddress: task.contractAddress,
     verifiedBalance: detectedBalance,
-    requiredBalance: config.minimumBalance,
+    requiredBalance: task.minimumBalance,
     status: eligible ? "verified" : "not_eligible",
     verificationData,
   });
@@ -312,17 +367,18 @@ export async function verifyTokenHolder(userId: number, rawAddress: string) {
     return {
       status: "not_eligible",
       walletAddress: address,
-      chainId: config.chainId,
+      chainId: task.chainId,
+      taskId: task.id,
       verifiedBalance: detectedBalance,
-      requiredBalance: config.minimumBalance,
+      requiredBalance: task.minimumBalance,
     } as const;
 
-  const idempotencyKey = `web3:token-hold:${userId}:${quest.id}:${address.toLowerCase()}`;
+  const idempotencyKey = `web3:token-hold:${userId}:${task.id}:${address.toLowerCase()}`;
   await db
     .insert(questCompletions)
     .values({
       userId,
-      questId: quest.id,
+      questId: task.questId,
       status: "verified",
       verificationData,
       verifiedAt: new Date(),
@@ -340,15 +396,16 @@ export async function verifyTokenHolder(userId: number, rawAddress: string) {
     userId,
     source: "quest",
     sourceId: String(completion!.id),
-    basePoints: config.rewardPoints,
+    basePoints: task.rewardPoints,
     idempotencyKey: `quest:${completion!.id}`,
   });
   return {
     status: "verified",
     walletAddress: address,
-    chainId: config.chainId,
+    chainId: task.chainId,
+    taskId: task.id,
     verifiedBalance: detectedBalance,
-    requiredBalance: config.minimumBalance,
+    requiredBalance: task.minimumBalance,
     completion,
     transaction,
   } as const;

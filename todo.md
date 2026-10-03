@@ -1,8 +1,10 @@
 
-## Proof of Passage Web3 MVP
-- [x] Inspect the existing Proof of Passage section, quest engine, wallet model, and project integration tools.
-- [x] Add minimal Web3 task configuration and auditable verification data without duplicating points.
-- [x] Implement server-side Robinhood Testnet token verification and idempotent rewards, including wallet-rebinding protection.
-- [x] Build the Proof of Passage wallet/task UI using the existing Akla design system.
-- [x] Run security-focused tests, typecheck, build, and responsive verification.
-- [x] Save the completed Proof of Passage checkpoint.
+## Proof of Passage Full Specification Follow-up
+- [x] Inspect and preserve existing wallet, admin, quest, reward, referral, and responsive architecture.
+- [x] Replace the single env-backed token target with additive database-backed multi-token Proof of Passage tasks.
+- [x] Add admin CRUD, enable/disable, safe deletion behavior, and verification history for Web3 tasks.
+- [x] Update the member Proof of Passage page to show active database-configured tasks and verify each task.
+- [x] Add wallet account/network listeners and refresh wallet-specific eligibility without duplicate rewards.
+- [x] Fix referral mobile overflow and clean up Admin Console hierarchy/responsiveness without unrelated redesign.
+- [x] Add regression/security coverage and run typecheck, tests, build, and responsive QA.
+- [ ] Save a final checkpoint with the full specification implemented.

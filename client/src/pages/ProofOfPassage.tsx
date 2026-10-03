@@ -8,7 +8,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import {
-  ArrowRight,
   CheckCircle2,
   ExternalLink,
   KeyRound,
@@ -18,11 +17,16 @@ import {
   WalletCards,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type Eip1193Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (
+    event: string,
+    listener: (...args: unknown[]) => void
+  ) => void;
 };
 declare global {
   interface Window {
@@ -30,6 +34,12 @@ declare global {
   }
 }
 
+type PassageResult = {
+  status: string;
+  verifiedBalance?: string;
+  requiredBalance?: string;
+  transaction?: { finalPoints: number } | null;
+};
 function shortenAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
@@ -45,17 +55,16 @@ export default function ProofOfPassage() {
   const [walletStep, setWalletStep] = useState<
     "idle" | "connecting" | "signing"
   >("idle");
-  const [result, setResult] = useState<{
-    status: string;
-    verifiedBalance?: string;
-    requiredBalance?: string;
-    transaction?: { finalPoints: number } | null;
-  } | null>(null);
+  const [results, setResults] = useState<Record<number, PassageResult>>({});
+  const refreshOnNetworkReturn = useRef(false);
   const challenge = trpc.member.passage.challenge.useMutation();
   const verifyWallet = trpc.member.passage.verifyWallet.useMutation();
   const verifyToken = trpc.member.passage.verifyToken.useMutation({
-    onSuccess: data => {
-      setResult(data as typeof result);
+    onSuccess: (data, variables) => {
+      setResults(current => ({
+        ...current,
+        [variables.taskId]: data as PassageResult,
+      }));
       if (data.status === "verified" || data.status === "completed") {
         toast.success(
           data.transaction
@@ -66,28 +75,83 @@ export default function ProofOfPassage() {
         utils.member.questBoard.invalidate();
       } else
         toast.message("Not eligible yet", {
-          description: `Detected ${data.verifiedBalance} ${status.data?.config.tokenSymbol ?? "tokens"}; required ${data.requiredBalance}.`,
+          description: `Detected ${data.verifiedBalance}; required ${data.requiredBalance}.`,
         });
     },
     onError: error => toast.error(error.message),
   });
 
   const config = status.data?.config;
+  const tasks = status.data?.tasks ?? [];
   const wallet = status.data?.wallet;
   const address = connectedAddress || wallet?.address || "";
-  const chainId = connectedChainId;
   const walletVerified =
     wallet?.verificationState === "verified" &&
     (!connectedAddress ||
       wallet.address.toLowerCase() === connectedAddress.toLowerCase());
   const wrongNetwork = Boolean(
-    address && chainId !== null && chainId !== config?.chainId
+    address && connectedChainId !== null && connectedChainId !== config?.chainId
   );
   const busy =
-    walletStep !== "idle" ||
-    challenge.isPending ||
-    verifyWallet.isPending ||
-    verifyToken.isPending;
+    walletStep !== "idle" || challenge.isPending || verifyWallet.isPending;
+  const activeTaskIds = useMemo(
+    () => new Set(tasks.map(task => task.id)),
+    [tasks]
+  );
+
+  useEffect(() => {
+    const provider = window.ethereum;
+    if (!provider?.on) return;
+    const onAccountsChanged = (...args: unknown[]) => {
+      const accounts = (args[0] as string[] | undefined) ?? [];
+      refreshOnNetworkReturn.current = false;
+      setConnectedAddress(accounts[0] ?? "");
+      setConnectedChainId(null);
+      setResults({});
+      utils.member.passage.status.invalidate();
+      toast.message(
+        accounts[0] ? "Wallet account changed" : "Wallet disconnected"
+      );
+    };
+    const onChainChanged = (...args: unknown[]) => {
+      const nextChainId = Number.parseInt(String(args[0] ?? "0"), 16);
+      refreshOnNetworkReturn.current = nextChainId === config?.chainId;
+      setConnectedChainId(nextChainId);
+      setResults({});
+      utils.member.passage.status.invalidate();
+      toast.message(
+        nextChainId === config?.chainId
+          ? "Robinhood Chain Testnet detected"
+          : "Wrong network detected"
+      );
+    };
+    provider.on("accountsChanged", onAccountsChanged);
+    provider.on("chainChanged", onChainChanged);
+    return () => {
+      provider.removeListener?.("accountsChanged", onAccountsChanged);
+      provider.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [config?.chainId, utils]);
+
+  useEffect(() => {
+    if (
+      !refreshOnNetworkReturn.current ||
+      !address ||
+      !walletVerified ||
+      wrongNetwork ||
+      activeTaskIds.size === 0
+    )
+      return;
+    refreshOnNetworkReturn.current = false;
+    tasks.forEach(task => verifyToken.mutate({ taskId: task.id, address }));
+  }, [
+    activeTaskIds,
+    address,
+    tasks,
+    verifyToken,
+    walletVerified,
+    wrongNetwork,
+  ]);
 
   async function connectWallet() {
     if (!window.ethereum) {
@@ -109,6 +173,7 @@ export default function ProofOfPassage() {
       );
       setConnectedAddress(nextAddress);
       setConnectedChainId(chain);
+      setResults({});
       if (chain !== config?.chainId) {
         toast.warning(
           `Switch to ${config?.chainName ?? "Robinhood Chain Testnet"} before signing.`
@@ -151,12 +216,12 @@ export default function ProofOfPassage() {
         params: [{ chainId: chainHex(config.chainId) }],
       });
       setConnectedChainId(config.chainId);
+      setResults({});
       toast.success(
         `Switched to ${config.chainName}. Connect again to verify ownership.`
       );
     } catch (error) {
-      const code = (error as { code?: number }).code;
-      if (code === 4902) {
+      if ((error as { code?: number }).code === 4902) {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
           params: [
@@ -177,18 +242,13 @@ export default function ProofOfPassage() {
     }
   }
 
-  function verify() {
-    if (!address) {
-      toast.error("Connect and verify a wallet first.");
-      return;
-    }
-    if (wrongNetwork) {
-      toast.error(
+  function verifyTask(taskId: number) {
+    if (!address) return toast.error("Connect and verify a wallet first.");
+    if (wrongNetwork)
+      return toast.error(
         `Switch to ${config?.chainName ?? "Robinhood Chain Testnet"} first.`
       );
-      return;
-    }
-    verifyToken.mutate({ address });
+    verifyToken.mutate({ taskId, address });
   }
 
   if (status.isLoading)
@@ -226,66 +286,20 @@ export default function ProofOfPassage() {
           <article className="panel-surface overflow-hidden p-6 sm:p-8">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="eyebrow">Passage task 01</p>
+                <p className="eyebrow">Web3 tasks</p>
                 <h2 className="mt-2 font-display text-3xl font-semibold tracking-[-.04em] text-white">
-                  Hold {config?.tokenSymbol || "the target token"}
+                  Passage tasks
                 </h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
-                  Prove that your wallet holds the configured ERC-20 token on
-                  Robinhood Chain Testnet. Akla reads the balance directly from
-                  the chain—your browser cannot submit a made-up balance.
+                  Select an active token task below. Akla reads each ERC-20
+                  balance directly from Robinhood Chain Testnet and uses the
+                  existing quest ledger for points.
                 </p>
               </div>
               <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-violet-400/10 text-violet-200">
                 <Zap className="h-6 w-6" />
               </span>
             </div>
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
-              <Metric
-                label="Network"
-                value={config?.chainName ?? "Unavailable"}
-              />
-              <Metric
-                label="Required"
-                value={
-                  config?.enabled
-                    ? `${config.minimumBalance} ${config.tokenSymbol}`
-                    : "Not configured"
-                }
-              />
-              <Metric
-                label="Reward"
-                value={`+${formatPoints(config?.rewardPoints ?? 500)} pts`}
-              />
-            </div>
-            {!config?.enabled ? (
-              <div className="mt-6 rounded-2xl border border-amber-300/15 bg-amber-300/[0.06] p-4">
-                <p className="text-sm font-medium text-amber-100">
-                  Token verification is waiting for configuration.
-                </p>
-                <p className="mt-1 text-xs leading-5 text-amber-100/60">
-                  An administrator must set the target token contract, symbol,
-                  decimals, and minimum balance before this task can be
-                  verified. No placeholder contract is used.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-2xl border border-white/[0.07] bg-black/10 p-4">
-                <div className="flex items-start gap-3">
-                  <ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-300" />
-                  <div>
-                    <p className="text-sm font-medium text-white">
-                      Server-verified balance
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      The reward is written to your existing Akla quest ledger
-                      once the chain check passes. Repeated verification cannot
-                      mint duplicate points.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Button
                 onClick={connectWallet}
@@ -309,63 +323,46 @@ export default function ProofOfPassage() {
                   Switch network
                 </Button>
               )}
-              {walletVerified && !wrongNetwork && (
-                <Button
-                  onClick={verify}
-                  disabled={busy || !config?.enabled}
-                  className="bg-white text-[#111026] hover:bg-slate-200"
-                >
-                  {verifyToken.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                  )}
-                  Verify balance
-                </Button>
-              )}
-            </div>
-            {address && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-emerald-300/10 px-2.5 py-1.5 font-medium text-emerald-100">
-                  {walletVerified ? "Wallet verified" : "Wallet connected"}
-                </span>
-                <span className="font-mono text-slate-400">
+              {address && (
+                <span className="inline-flex items-center rounded-full bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100">
+                  {walletVerified ? "Wallet verified" : "Wallet connected"} ·{" "}
                   {shortenAddress(address)}
                 </span>
-                {chainId && (
-                  <span
-                    className={`rounded-full px-2.5 py-1.5 ${wrongNetwork ? "bg-rose-300/10 text-rose-100" : "bg-violet-300/10 text-violet-100"}`}
-                  >
-                    {wrongNetwork ? "Wrong network" : config?.chainName}
-                  </span>
-                )}
-              </div>
-            )}
-            {result && (
-              <div
-                className={`mt-6 rounded-2xl border p-5 ${result.status === "verified" || result.status === "completed" ? "border-emerald-300/20 bg-emerald-300/[0.07]" : "border-amber-300/20 bg-amber-300/[0.07]"}`}
-              >
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {result.status === "not_eligible"
-                        ? "Not eligible yet"
-                        : "Passage verified"}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
-                      Detected{" "}
-                      {result.verifiedBalance ??
-                        "a previously verified balance"}{" "}
-                      {config?.tokenSymbol}. Required{" "}
-                      {result.requiredBalance ?? config?.minimumBalance}{" "}
-                      {config?.tokenSymbol}.
-                    </p>
-                  </div>
-                </div>
+              )}
+            </div>
+            {wrongNetwork && (
+              <div className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-300/[0.06] p-4 text-sm text-rose-100">
+                <strong>Wrong network.</strong> Please switch to{" "}
+                {config?.chainName} to refresh eligibility.
               </div>
             )}
           </article>
+          {tasks.length ? (
+            tasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                result={results[task.id]}
+                verifying={
+                  verifyToken.isPending &&
+                  verifyToken.variables?.taskId === task.id
+                }
+                disabled={!walletVerified || wrongNetwork}
+                onVerify={() => verifyTask(task.id)}
+              />
+            ))
+          ) : (
+            <article className="panel-surface p-6">
+              <p className="eyebrow">No active tasks</p>
+              <h2 className="mt-2 font-display text-2xl font-semibold text-white">
+                Passage is being configured
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                An Akla administrator has not enabled a token-holder task yet.
+                No placeholder contract is used.
+              </p>
+            </article>
+          )}
           <div className="grid gap-4 sm:grid-cols-3">
             <Step
               icon={<Link2 className="h-4 w-4" />}
@@ -380,7 +377,7 @@ export default function ProofOfPassage() {
             <Step
               icon={<ShieldCheck className="h-4 w-4" />}
               title="Verify passage"
-              copy="Read the token balance from chain."
+              copy="Read each token balance from chain."
             />
           </div>
         </section>
@@ -391,10 +388,9 @@ export default function ProofOfPassage() {
               A clean path to interoperability
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Proof of Passage is testnet-only today. The architecture keeps
-              chain, contract, verification method, and future reward
-              eligibility separate so more passage experiences can be added
-              without replacing the Akla quest system.
+              Proof of Passage is testnet-only today. Each configured task keeps
+              its own contract, minimum, decimals, reward, and history while
+              sharing the existing Akla quest engine.
             </p>
             <div className="mt-6 space-y-3">
               <InfoRow
@@ -405,14 +401,14 @@ export default function ProofOfPassage() {
                 label="Native token"
                 value={config?.nativeSymbol ?? "ETH"}
               />
-              <InfoRow label="Wallet privacy" value="Short address only" />
+              <InfoRow label="Active tasks" value={String(tasks.length)} />
             </div>
           </article>
           <article className="panel-surface p-6">
             <p className="eyebrow">Safety by default</p>
             <div className="mt-4 space-y-4">
               <Safety copy="No seed phrase or private key is requested." />
-              <Safety copy="The server verifies the signature and reads the balance." />
+              <Safety copy="The server verifies signatures and reads balances." />
               <Safety copy="Website points remain the only reward in this testnet MVP." />
             </div>
             <a
@@ -431,13 +427,104 @@ export default function ProofOfPassage() {
   );
 }
 
+function TaskCard({
+  task,
+  result,
+  verifying,
+  disabled,
+  onVerify,
+}: {
+  task: {
+    id: number;
+    name: string;
+    symbol: string;
+    contractAddress: string;
+    minimumBalance: string;
+    rewardPoints: number;
+    description: string;
+    active: boolean;
+  };
+  result?: PassageResult;
+  verifying: boolean;
+  disabled: boolean;
+  onVerify: () => void;
+}) {
+  return (
+    <article className="panel-surface p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="eyebrow">Token task</p>
+          <h2 className="mt-2 font-display text-2xl font-semibold text-white">
+            Hold {task.symbol}
+          </h2>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
+            {task.description}
+          </p>
+        </div>
+        <span className="rounded-full bg-violet-300/10 px-3 py-1.5 text-xs font-semibold text-violet-100">
+          +{formatPoints(task.rewardPoints)} pts
+        </span>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <Metric label="Token" value={task.name} />
+        <Metric
+          label="Minimum"
+          value={`${task.minimumBalance} ${task.symbol}`}
+        />
+        <Metric
+          label="Contract"
+          value={`${task.contractAddress.slice(0, 6)}…${task.contractAddress.slice(-4)}`}
+        />
+      </div>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Button
+          onClick={onVerify}
+          disabled={disabled || verifying}
+          className="bg-white text-[#111026] hover:bg-slate-200"
+        >
+          {verifying ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+          )}
+          {result?.status === "completed" || result?.status === "verified"
+            ? "Verified"
+            : "Verify balance"}
+        </Button>
+        {disabled && (
+          <span className="text-xs text-slate-500">
+            Connect and verify your wallet on Robinhood Chain Testnet first.
+          </span>
+        )}
+      </div>
+      {result && (
+        <div
+          className={`mt-5 rounded-2xl border p-4 ${result.status === "not_eligible" ? "border-amber-300/20 bg-amber-300/[0.06]" : "border-emerald-300/20 bg-emerald-300/[0.06]"}`}
+        >
+          <p className="text-sm font-semibold text-white">
+            {result.status === "not_eligible"
+              ? "Not eligible yet"
+              : "Passage verified"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">
+            Detected {result.verifiedBalance ?? "a previous verified balance"}{" "}
+            {task.symbol}; required{" "}
+            {result.requiredBalance ?? task.minimumBalance} {task.symbol}.
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white/[0.035] p-3">
       <p className="text-[10px] uppercase tracking-[.16em] text-slate-500">
         {label}
       </p>
-      <p className="mt-1 text-sm font-medium text-slate-100">{value}</p>
+      <p className="mt-1 truncate text-sm font-medium text-slate-100">
+        {value}
+      </p>
     </div>
   );
 }
@@ -465,7 +552,6 @@ function Step({
       </span>
       <p className="mt-4 text-sm font-medium text-white">{title}</p>
       <p className="mt-1 text-xs leading-5 text-slate-500">{copy}</p>
-      <ArrowRight className="mt-4 h-4 w-4 text-slate-600" />
     </div>
   );
 }

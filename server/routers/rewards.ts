@@ -6,6 +6,9 @@ import {
   multiplierLevels,
   officialSocialAccounts,
   quests,
+  web3TokenTasks,
+  web3Verifications,
+  questCompletions,
 } from "../../drizzle/schema";
 import {
   MULTIPLIER_TIER_VALUES,
@@ -18,6 +21,8 @@ import {
   getWeb3Status,
   verifyTokenHolder,
   verifyWalletOwnership,
+  getWeb3VerificationHistory,
+  validateTokenTaskInput,
 } from "../web3";
 import {
   attachReferral,
@@ -75,6 +80,19 @@ const questInput = z.object({
   instructions: z.array(z.string().trim().max(500)).max(12).optional(),
   startsAt: z.date().optional(),
   endsAt: z.date().optional(),
+});
+
+const web3TaskInput = z.object({
+  id: z.number().int().positive().optional(),
+  name: z.string().trim().min(1).max(160),
+  symbol: z.string().trim().min(1).max(32),
+  contractAddress: z.string().trim().min(42).max(42),
+  chainId: z.number().int(),
+  decimals: z.number().int().min(0).max(36),
+  minimumBalance: z.string().trim().min(1).max(160),
+  rewardPoints: z.number().int().min(200).max(10_000_000),
+  description: z.string().trim().min(10).max(3000),
+  active: z.boolean(),
 });
 
 export const memberRouter = router({
@@ -169,9 +187,14 @@ export const memberRouter = router({
       )
       .mutation(({ ctx, input }) => verifyWalletOwnership(ctx.user.id, input)),
     verifyToken: protectedProcedure
-      .input(z.object({ address: z.string().trim().min(42).max(42) }))
+      .input(
+        z.object({
+          taskId: z.number().int().positive(),
+          address: z.string().trim().min(42).max(42),
+        })
+      )
       .mutation(({ ctx, input }) =>
-        verifyTokenHolder(ctx.user.id, input.address)
+        verifyTokenHolder(ctx.user.id, input.taskId, input.address)
       ),
   }),
   referrals: router({
@@ -318,6 +341,160 @@ export const adminRouter = router({
           targetId: String(created[0]?.id),
         });
         return { id: created[0]?.id };
+      }),
+  }),
+  web3: router({
+    list: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      return db
+        .select({ task: web3TokenTasks, quest: quests })
+        .from(web3TokenTasks)
+        .innerJoin(quests, eq(web3TokenTasks.questId, quests.id))
+        .orderBy(web3TokenTasks.createdAt);
+    }),
+    history: adminProcedure.query(() => getWeb3VerificationHistory()),
+    upsert: adminProcedure
+      .input(web3TaskInput)
+      .mutation(async ({ ctx, input }) => {
+        const validated = validateTokenTaskInput(input);
+        await enforceRateLimit(
+          ctx.user.id,
+          "admin_web3_task_config",
+          30,
+          60 * 60 * 1000
+        );
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        const [duplicate] = await db
+          .select({ id: web3TokenTasks.id })
+          .from(web3TokenTasks)
+          .where(
+            and(
+              eq(web3TokenTasks.contractAddress, validated.contractAddress),
+              eq(web3TokenTasks.chainId, validated.chainId)
+            )
+          )
+          .limit(1);
+        if (duplicate && duplicate.id !== input.id)
+          throw new Error(
+            "This token contract is already configured for this network."
+          );
+        if (input.id) {
+          const [existing] = await db
+            .select()
+            .from(web3TokenTasks)
+            .where(eq(web3TokenTasks.id, input.id))
+            .limit(1);
+          if (!existing) throw new Error("Proof of Passage task not found.");
+          await db
+            .update(web3TokenTasks)
+            .set({
+              name: validated.name,
+              symbol: validated.symbol,
+              contractAddress: validated.contractAddress,
+              chainId: validated.chainId,
+              decimals: validated.decimals,
+              minimumBalance: validated.minimumBalance,
+              rewardPoints: validated.rewardPoints,
+              description: validated.description,
+              active: validated.active,
+            })
+            .where(eq(web3TokenTasks.id, input.id));
+          await db
+            .update(quests)
+            .set({
+              title: `Hold ${validated.symbol}`,
+              description: validated.description,
+              basePoints: validated.rewardPoints,
+              active: validated.active,
+            })
+            .where(eq(quests.id, existing.questId));
+          await recordAdminAudit({
+            adminUserId: ctx.user.id,
+            action: "web3_task_updated",
+            targetType: "web3_token_task",
+            targetId: String(input.id),
+          });
+          return { id: input.id };
+        }
+        const slug = `proof-passage-${validated.symbol.toLowerCase()}-${Date.now().toString(36)}`;
+        await db.insert(quests).values({
+          slug,
+          title: `Hold ${validated.symbol}`,
+          description: validated.description,
+          category: "passage",
+          questType: "standard",
+          verificationType: "onchain",
+          platform: "web3",
+          basePoints: validated.rewardPoints,
+          isPremium: false,
+          active: validated.active,
+          ctaLabel: "Verify balance",
+          completionLimit: 1,
+          createdByUserId: ctx.user.id,
+        });
+        const [quest] = await db
+          .select({ id: quests.id })
+          .from(quests)
+          .where(eq(quests.slug, slug))
+          .limit(1);
+        if (!quest)
+          throw new Error("Unable to create the Proof of Passage quest.");
+        await db.insert(web3TokenTasks).values({
+          questId: quest.id,
+          name: validated.name,
+          symbol: validated.symbol,
+          contractAddress: validated.contractAddress,
+          chainId: validated.chainId,
+          decimals: validated.decimals,
+          minimumBalance: validated.minimumBalance,
+          rewardPoints: validated.rewardPoints,
+          description: validated.description,
+          active: validated.active,
+        });
+        await recordAdminAudit({
+          adminUserId: ctx.user.id,
+          action: "web3_task_created",
+          targetType: "web3_token_task",
+          targetId: String(quest.id),
+        });
+        return { id: quest.id };
+      }),
+    remove: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        const [task] = await db
+          .select()
+          .from(web3TokenTasks)
+          .where(eq(web3TokenTasks.id, input.id))
+          .limit(1);
+        if (!task) throw new Error("Proof of Passage task not found.");
+        const [verification] = await db
+          .select({ id: web3Verifications.id })
+          .from(web3Verifications)
+          .where(eq(web3Verifications.questId, task.questId))
+          .limit(1);
+        const [completion] = await db
+          .select({ id: questCompletions.id })
+          .from(questCompletions)
+          .where(eq(questCompletions.questId, task.questId))
+          .limit(1);
+        if (verification || completion)
+          throw new Error(
+            "This task has history. Disable it instead of deleting it."
+          );
+        await db.delete(web3TokenTasks).where(eq(web3TokenTasks.id, input.id));
+        await db.delete(quests).where(eq(quests.id, task.questId));
+        await recordAdminAudit({
+          adminUserId: ctx.user.id,
+          action: "web3_task_deleted",
+          targetType: "web3_token_task",
+          targetId: String(input.id),
+        });
+        return { success: true };
       }),
   }),
   socialAccounts: router({
