@@ -7,4 +7,4 @@
 - [x] Add wallet account/network listeners and refresh wallet-specific eligibility without duplicate rewards.
 - [x] Fix referral mobile overflow and clean up Admin Console hierarchy/responsiveness without unrelated redesign.
 - [x] Add regression/security coverage and run typecheck, tests, build, and responsive QA.
-- [ ] Save a final checkpoint with the full specification implemented.
+- [x] Save a final checkpoint with the full specification implemented.
