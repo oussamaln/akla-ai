@@ -557,5 +557,153 @@ export const web3Verifications = mysqlTable(
   ]
 );
 
+export const projects = mysqlTable(
+  "projects",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    creatorUserId: int("creatorUserId").notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    slug: varchar("slug", { length: 96 }).notNull(),
+    symbol: varchar("symbol", { length: 32 }),
+    description: text("description").notNull(),
+    tokenContractAddress: varchar("tokenContractAddress", { length: 42 }),
+    chainId: int("chainId"),
+    imageUrl: varchar("imageUrl", { length: 2048 }),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("projects_slug_unique").on(table.slug),
+    index("projects_creator_created_idx").on(
+      table.creatorUserId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const agents = mysqlTable(
+  "agents",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    creatorUserId: int("creatorUserId").notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    description: text("description").notNull(),
+    personality: varchar("personality", { length: 80 }).notNull(),
+    systemInstructions: text("systemInstructions").notNull(),
+    goals: text("goals").notNull(),
+    allowedActions: text("allowedActions").notNull(),
+    prohibitedActions: text("prohibitedActions").notNull(),
+    responseStyle: varchar("responseStyle", { length: 80 }).notNull(),
+    avatarUrl: varchar("avatarUrl", { length: 2048 }),
+    status: mysqlEnum("status", ["draft", "launched", "disabled"])
+      .default("draft")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    uniqueIndex("agents_slug_unique").on(table.slug),
+    index("agents_creator_status_idx").on(table.creatorUserId, table.status),
+    index("agents_project_idx").on(table.projectId),
+  ]
+);
+
+export const agentMessages = mysqlTable(
+  "agent_messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    agentId: int("agentId").notNull(),
+    userId: int("userId").notNull(),
+    conversationId: varchar("conversationId", { length: 64 }).notNull(),
+    role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+    content: text("content").notNull(),
+    creditsSpent: int("creditsSpent").default(0).notNull(),
+    provider: varchar("provider", { length: 64 }),
+    model: varchar("model", { length: 160 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    index("agent_messages_agent_created_idx").on(
+      table.agentId,
+      table.createdAt
+    ),
+    index("agent_messages_user_created_idx").on(table.userId, table.createdAt),
+    index("agent_messages_conversation_idx").on(
+      table.conversationId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const agentFeedback = mysqlTable(
+  "agent_feedback",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    agentId: int("agentId").notNull(),
+    userId: int("userId").notNull(),
+    conversationId: varchar("conversationId", { length: 64 }).notNull(),
+    rating: int("rating").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("agent_feedback_user_conversation_unique").on(
+      table.agentId,
+      table.userId,
+      table.conversationId
+    ),
+    index("agent_feedback_agent_idx").on(table.agentId, table.createdAt),
+  ]
+);
+
+export const creditTransactions = mysqlTable(
+  "credit_transactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    type: mysqlEnum("type", [
+      "welcome",
+      "purchase",
+      "spend",
+      "admin_adjustment",
+      "refund",
+    ]).notNull(),
+    amount: int("amount").notNull(),
+    reference: varchar("reference", { length: 160 }).notNull(),
+    txHash: varchar("txHash", { length: 128 }),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("credit_transactions_user_type_reference_unique").on(
+      table.userId,
+      table.type,
+      table.reference
+    ),
+    index("credit_transactions_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const creditPackages = mysqlTable(
+  "credit_packages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 96 }).notNull(),
+    credits: int("credits").notNull(),
+    priceWei: varchar("priceWei", { length: 96 }).notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => [
+    index("credit_packages_active_idx").on(table.active, table.createdAt),
+  ]
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

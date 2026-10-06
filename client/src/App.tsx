@@ -4,6 +4,11 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Admin from "./pages/Admin";
+import AgentArena from "./pages/AgentArena";
+import AgentPage from "./pages/AgentPage";
+import CreateAgent from "./pages/CreateAgent";
+import Credits from "./pages/Credits";
+import ExploreAgents from "./pages/ExploreAgents";
 import Home from "./pages/Home";
 import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
@@ -22,6 +27,11 @@ function Router() {
       <Route path="/referrals" component={Referrals} />
       <Route path="/profile" component={Profile} />
       <Route path="/admin" component={Admin} />
+      <Route path="/explore" component={ExploreAgents} />
+      <Route path="/arena" component={AgentArena} />
+      <Route path="/create-agent" component={CreateAgent} />
+      <Route path="/credits" component={Credits} />
+      <Route path="/agents/:slug" component={AgentPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -1,10 +1,11 @@
 
-## Proof of Passage Full Specification Follow-up
-- [x] Inspect and preserve existing wallet, admin, quest, reward, referral, and responsive architecture.
-- [x] Replace the single env-backed token target with additive database-backed multi-token Proof of Passage tasks.
-- [x] Add admin CRUD, enable/disable, safe deletion behavior, and verification history for Web3 tasks.
-- [x] Update the member Proof of Passage page to show active database-configured tasks and verify each task.
-- [x] Add wallet account/network listeners and refresh wallet-specific eligibility without duplicate rewards.
-- [x] Fix referral mobile overflow and clean up Admin Console hierarchy/responsiveness without unrelated redesign.
-- [x] Add regression/security coverage and run typecheck, tests, build, and responsive QA.
-- [x] Save a final checkpoint with the full specification implemented.
+## AI Agent + Credit Ecosystem
+- [x] Audit the existing project, AI, wallet, schema, and routing surfaces against the master prompt.
+- [x] Add additive project, agent, conversation, feedback, credit ledger, and credit package models.
+- [x] Implement server-side agent creation, launch, safety normalization, and provider abstraction.
+- [x] Implement authenticated credit-gated agent chat with ledger accounting and failure reconciliation.
+- [x] Build creator project/agent setup, public agent pages, discovery, feedback, and Agent Arena.
+- [x] Add configurable free credits and Admin Console usage/package/agent controls.
+- [x] Preserve and integrate existing Proof of Passage, referrals, and wallet/testnet labeling.
+- [x] Add regression/security tests, mobile QA, typecheck, tests, and production build.
+- [x] Save a final checkpoint for the additive ecosystem release.

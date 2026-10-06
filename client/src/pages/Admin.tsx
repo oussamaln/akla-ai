@@ -16,13 +16,16 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   BadgeCheck,
+  Bot,
   Check,
   Copy,
   ClipboardList,
+  Coins,
   Database,
   Plus,
   Search,
   Settings2,
+  ShieldCheck,
   Trash2,
   UserRound,
   UsersRound,
@@ -117,6 +120,12 @@ export default function Admin() {
     active: true,
   });
   const [web3Form, setWeb3Form] = useState<Web3TaskForm>(blankWeb3Task);
+  const [creditPackageForm, setCreditPackageForm] = useState({
+    name: "Starter",
+    credits: 25,
+    priceWei: "1000000000000000",
+    active: true,
+  });
   const overview = trpc.admin.overview.useQuery(undefined, {
     enabled: user?.role === "admin",
   });
@@ -144,6 +153,15 @@ export default function Admin() {
     enabled: user?.role === "admin",
   });
   const web3History = trpc.admin.web3.history.useQuery(undefined, {
+    enabled: user?.role === "admin",
+  });
+  const aiOverview = trpc.admin.ai.overview.useQuery(undefined, {
+    enabled: user?.role === "admin",
+  });
+  const aiAgents = trpc.admin.ai.agents.list.useQuery(undefined, {
+    enabled: user?.role === "admin",
+  });
+  const creditPackages = trpc.admin.ai.packages.list.useQuery(undefined, {
     enabled: user?.role === "admin",
   });
 
@@ -203,6 +221,21 @@ export default function Admin() {
     onSuccess: () => {
       toast.success("Token task deleted");
       utils.admin.web3.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const setAgentStatus = trpc.admin.ai.agents.setStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Agent status updated");
+      utils.admin.ai.agents.list.invalidate();
+      utils.admin.ai.overview.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const saveCreditPackage = trpc.admin.ai.packages.upsert.useMutation({
+    onSuccess: () => {
+      toast.success("Credit package saved");
+      utils.admin.ai.packages.list.invalidate();
     },
     onError: error => toast.error(error.message),
   });
@@ -400,6 +433,20 @@ export default function Admin() {
                   })
                 }
               />
+              <ConfigNumber
+                label="Welcome AI Credits"
+                value={settingValue("aiWelcomeCredits", 10)}
+                onSave={value =>
+                  updateSetting.mutate({ key: "aiWelcomeCredits", value })
+                }
+              />
+              <ConfigNumber
+                label="AI Credits per message"
+                value={settingValue("aiMessageCost", 1)}
+                onSave={value =>
+                  updateSetting.mutate({ key: "aiMessageCost", value })
+                }
+              />
             </div>
           </article>
         </div>
@@ -530,7 +577,266 @@ export default function Admin() {
             removeWeb3Task.mutate({ id });
         }}
       />
+      <AIEconomyManager
+        overview={aiOverview.data}
+        agents={aiAgents.data ?? []}
+        packages={creditPackages.data ?? []}
+        packageForm={creditPackageForm}
+        onPackageFormChange={setCreditPackageForm}
+        savingPackage={saveCreditPackage.isPending}
+        onSavePackage={() => saveCreditPackage.mutate(creditPackageForm)}
+        onSetStatus={(agentId, status) =>
+          setAgentStatus.mutate({ agentId, status })
+        }
+        settingStatus={setAgentStatus.isPending}
+      />
     </DashboardLayout>
+  );
+}
+
+type AdminAgentRow = {
+  agent: {
+    id: number;
+    name: string;
+    slug: string;
+    status: "draft" | "launched" | "disabled";
+  };
+  project: { name: string; symbol: string | null };
+  creator: { username: string } | null;
+};
+
+type AdminCreditPackage = {
+  id: number;
+  name: string;
+  credits: number;
+  priceWei: string;
+  active: boolean;
+};
+
+function AIEconomyManager({
+  overview,
+  agents,
+  packages,
+  packageForm,
+  onPackageFormChange,
+  savingPackage,
+  onSavePackage,
+  onSetStatus,
+  settingStatus,
+}: {
+  overview?: {
+    messages: number;
+    creditsSpent: number;
+  };
+  agents: AdminAgentRow[];
+  packages: AdminCreditPackage[];
+  packageForm: {
+    name: string;
+    credits: number;
+    priceWei: string;
+    active: boolean;
+  };
+  onPackageFormChange: React.Dispatch<
+    React.SetStateAction<{
+      name: string;
+      credits: number;
+      priceWei: string;
+      active: boolean;
+    }>
+  >;
+  savingPackage: boolean;
+  onSavePackage: () => void;
+  onSetStatus: (
+    agentId: number,
+    status: "draft" | "launched" | "disabled"
+  ) => void;
+  settingStatus: boolean;
+}) {
+  return (
+    <section className="mt-6 space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="eyebrow">AI ecosystem</p>
+          <h2 className="mt-2 font-display text-3xl font-semibold text-white">
+            Agent governance & Credits
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            Keep usage, package pricing, and creator-launched agents observable.
+            Never edit a user’s balance outside the immutable credit ledger.
+          </p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-fuchsia-300/15 bg-fuchsia-300/[0.06] px-3 py-2 text-xs text-fuchsia-100">
+          <Bot className="h-3.5 w-3.5" /> {agents.length} registered agents
+        </span>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Messages"
+          value={formatPoints(overview?.messages ?? 0)}
+          hint="Recorded agent messages"
+          accent="blue"
+        />
+        <MetricCard
+          label="Credits spent"
+          value={formatPoints(overview?.creditsSpent ?? 0)}
+          hint="Ledger-backed usage"
+          accent="amber"
+        />
+        <MetricCard
+          label="Launched"
+          value={formatPoints(
+            agents.filter(item => item.agent.status === "launched").length
+          )}
+          hint="Publicly discoverable"
+          accent="mint"
+        />
+        <MetricCard
+          label="Packages"
+          value={formatPoints(packages.length)}
+          hint="Configured credit offers"
+        />
+      </div>
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
+        <article className="panel-surface min-w-0 p-6">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-1 h-5 w-5 text-emerald-200" />
+            <div>
+              <p className="eyebrow">Agent moderation</p>
+              <h3 className="mt-2 font-display text-2xl font-semibold text-white">
+                Launch queue
+              </h3>
+            </div>
+          </div>
+          <div className="mt-5 space-y-2">
+            {agents.length ? (
+              agents.map(item => (
+                <div
+                  key={item.agent.id}
+                  className="flex flex-col gap-3 rounded-xl bg-white/[0.035] p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {item.agent.name}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {item.project.name}
+                      {item.project.symbol
+                        ? ` · $${item.project.symbol}`
+                        : ""}{" "}
+                      ·{" "}
+                      {item.creator?.username
+                        ? `@${item.creator.username}`
+                        : "Creator profile pending"}
+                    </p>
+                  </div>
+                  <select
+                    value={item.agent.status}
+                    disabled={settingStatus}
+                    onChange={event =>
+                      onSetStatus(
+                        item.agent.id,
+                        event.target.value as AdminAgentRow["agent"]["status"]
+                      )
+                    }
+                    className="field-dark h-9 rounded-md px-2 text-xs sm:w-32"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="launched">Launched</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-xl bg-white/[0.035] p-4 text-sm text-slate-500">
+                No creator agents yet.
+              </p>
+            )}
+          </div>
+        </article>
+        <article className="panel-surface min-w-0 p-6">
+          <div className="flex items-start gap-3">
+            <Coins className="mt-1 h-5 w-5 text-amber-200" />
+            <div>
+              <p className="eyebrow">Credit packages</p>
+              <h3 className="mt-2 font-display text-2xl font-semibold text-white">
+                Configure offers
+              </h3>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3">
+            <AdminInput
+              label="Package name"
+              value={packageForm.name}
+              onChange={value =>
+                onPackageFormChange(current => ({ ...current, name: value }))
+              }
+            />
+            <AdminInput
+              label="Credits"
+              type="number"
+              value={String(packageForm.credits)}
+              onChange={value =>
+                onPackageFormChange(current => ({
+                  ...current,
+                  credits: Number(value) || 0,
+                }))
+              }
+            />
+            <AdminInput
+              label="Price in testnet wei"
+              value={packageForm.priceWei}
+              onChange={value =>
+                onPackageFormChange(current => ({
+                  ...current,
+                  priceWei: value,
+                }))
+              }
+            />
+            <label className="flex items-center gap-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={packageForm.active}
+                onChange={event =>
+                  onPackageFormChange(current => ({
+                    ...current,
+                    active: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-violet-500"
+              />{" "}
+              Active for members
+            </label>
+            <Button
+              onClick={onSavePackage}
+              disabled={
+                savingPackage ||
+                packageForm.credits < 1 ||
+                !packageForm.name ||
+                !packageForm.priceWei
+              }
+              className="bg-violet-500 text-white hover:bg-violet-400"
+            >
+              {savingPackage ? "Saving…" : "Save package"}
+            </Button>
+          </div>
+          <div className="mt-5 space-y-2">
+            {packages.slice(0, 4).map(pkg => (
+              <div
+                key={pkg.id}
+                className="flex items-center justify-between rounded-xl border border-white/[0.06] px-3 py-2.5 text-xs"
+              >
+                <span className="text-slate-200">
+                  {pkg.name} · {pkg.credits} credits
+                </span>
+                <span className="font-mono text-slate-500">
+                  {pkg.priceWei} wei
+                </span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
   );
 }
 

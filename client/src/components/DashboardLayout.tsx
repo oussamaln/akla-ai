@@ -25,13 +25,17 @@ import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   Award,
+  Bot,
   ChevronDown,
   Compass,
+  Coins,
   LayoutDashboard,
   Link2,
   LogOut,
   Medal,
   ShieldCheck,
+  Sparkles,
+  Trophy,
   UserRound,
 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -43,6 +47,10 @@ const primaryNav = [
   { icon: Link2, label: "Proof of Passage", path: "/proof-of-passage" },
   { icon: Medal, label: "Leaderboard", path: "/leaderboard" },
   { icon: Award, label: "Referrals", path: "/referrals" },
+  { icon: Bot, label: "Explore agents", path: "/explore" },
+  { icon: Trophy, label: "Agent Arena", path: "/arena" },
+  { icon: Sparkles, label: "Creator studio", path: "/create-agent" },
+  { icon: Coins, label: "AI Credits", path: "/credits" },
 ];
 
 function Brand() {

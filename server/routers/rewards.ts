@@ -47,7 +47,31 @@ import {
   uploadProfileAvatar,
   verifyQuestCompletion,
 } from "../rewards";
-import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
+import {
+  adminProcedure,
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "../_core/trpc";
+import {
+  chatWithAgent,
+  createAgent,
+  createProject,
+  getAdminAgentOverview,
+  listAdminAgents,
+  listAllCreditPackages,
+  getArena,
+  getCreditBalance,
+  getMyProjects,
+  getPublicAgent,
+  launchAgent,
+  listAgents,
+  listCreditPackages,
+  saveCreditPackage,
+  setAgentStatus,
+  submitFeedback,
+  verifyCreditPurchase,
+} from "../agents";
 
 const socialInput = z.object({
   x: z.string().max(320).optional(),
@@ -92,6 +116,34 @@ const web3TaskInput = z.object({
   minimumBalance: z.string().trim().min(1).max(160),
   rewardPoints: z.number().int().min(200).max(10_000_000),
   description: z.string().trim().min(10).max(3000),
+  active: z.boolean(),
+});
+
+const projectInput = z.object({
+  name: z.string().trim().min(3).max(160),
+  symbol: z.string().trim().max(32).optional(),
+  description: z.string().trim().min(10).max(3000),
+  tokenContractAddress: z.string().trim().length(42).optional(),
+  imageUrl: z.string().url().max(2048).optional(),
+});
+
+const agentInput = z.object({
+  projectId: z.number().int().positive(),
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().min(10).max(3000),
+  personality: z.string().trim().min(2).max(80),
+  systemInstructions: z.string().trim().max(5000),
+  goals: z.string().trim().max(2000),
+  allowedActions: z.string().trim().max(2000),
+  prohibitedActions: z.string().trim().max(2000),
+  responseStyle: z.string().trim().min(2).max(80),
+});
+
+const creditPackageInput = z.object({
+  id: z.number().int().positive().optional(),
+  name: z.string().trim().min(2).max(96),
+  credits: z.number().int().positive().max(1_000_000),
+  priceWei: z.string().trim().min(1).max(96),
   active: z.boolean(),
 });
 
@@ -196,6 +248,64 @@ export const memberRouter = router({
       .mutation(({ ctx, input }) =>
         verifyTokenHolder(ctx.user.id, input.taskId, input.address)
       ),
+  }),
+  credits: router({
+    balance: protectedProcedure.query(({ ctx }) =>
+      getCreditBalance(ctx.user.id)
+    ),
+    packages: protectedProcedure.query(() => listCreditPackages()),
+    verifyPurchase: protectedProcedure
+      .input(
+        z.object({
+          packageId: z.number().int().positive(),
+          txHash: z.string().trim().length(66),
+        })
+      )
+      .mutation(({ ctx, input }) => verifyCreditPurchase(ctx.user.id, input)),
+  }),
+  projects: router({
+    mine: protectedProcedure.query(({ ctx }) => getMyProjects(ctx.user.id)),
+    create: protectedProcedure
+      .input(projectInput)
+      .mutation(({ ctx, input }) => createProject(ctx.user.id, input)),
+  }),
+  agents: router({
+    mine: protectedProcedure.query(({ ctx }) => getMyProjects(ctx.user.id)),
+    explore: protectedProcedure
+      .input(
+        z
+          .object({ sort: z.enum(["new", "active"]).default("active") })
+          .optional()
+      )
+      .query(({ input }) => listAgents(input?.sort ?? "active")),
+    arena: protectedProcedure.query(() => getArena()),
+    public: publicProcedure
+      .input(z.object({ slug: z.string().trim().min(3).max(120) }))
+      .query(({ input }) => getPublicAgent(input.slug)),
+    create: protectedProcedure
+      .input(agentInput)
+      .mutation(({ ctx, input }) => createAgent(ctx.user.id, input)),
+    launch: protectedProcedure
+      .input(z.object({ agentId: z.number().int().positive() }))
+      .mutation(({ ctx, input }) => launchAgent(ctx.user.id, input.agentId)),
+    chat: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number().int().positive(),
+          conversationId: z.string().trim().min(8).max(64),
+          message: z.string().trim().min(1).max(2000),
+        })
+      )
+      .mutation(({ ctx, input }) => chatWithAgent(ctx.user.id, input)),
+    feedback: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number().int().positive(),
+          conversationId: z.string().trim().min(8).max(64),
+          rating: z.union([z.literal(1), z.literal(3), z.literal(5)]),
+        })
+      )
+      .mutation(({ ctx, input }) => submitFeedback(ctx.user.id, input)),
   }),
   referrals: router({
     attach: protectedProcedure
@@ -497,6 +607,35 @@ export const adminRouter = router({
         return { success: true };
       }),
   }),
+  ai: router({
+    overview: adminProcedure.query(() => getAdminAgentOverview()),
+    agents: router({
+      list: adminProcedure.query(() => listAdminAgents()),
+      setStatus: adminProcedure
+        .input(
+          z.object({
+            agentId: z.number().int().positive(),
+            status: z.enum(["draft", "launched", "disabled"]),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          await recordAdminAudit({
+            adminUserId: ctx.user.id,
+            action: "agent_status_changed",
+            targetType: "agent",
+            targetId: String(input.agentId),
+            metadata: { status: input.status },
+          });
+          return setAgentStatus(input.agentId, input.status);
+        }),
+    }),
+    packages: router({
+      list: adminProcedure.query(() => listAllCreditPackages()),
+      upsert: adminProcedure
+        .input(creditPackageInput)
+        .mutation(({ ctx, input }) => saveCreditPackage(ctx.user.id, input)),
+    }),
+  }),
   socialAccounts: router({
     list: adminProcedure.query(async () => {
       const db = await getDb();
@@ -615,6 +754,8 @@ export const adminRouter = router({
             "dailyCheckinBasePoints",
             "weeklyCheckinBasePoints",
             "weeklyCheckinDaysRequired",
+            "aiWelcomeCredits",
+            "aiMessageCost",
             "readTheDocsUrl",
           ]),
           value: z.union([
@@ -641,6 +782,17 @@ export const adminRouter = router({
         )
           throw new Error(
             "Weekly progress must require between 1 and 7 daily check-ins."
+          );
+        if (
+          (input.key === "aiWelcomeCredits" || input.key === "aiMessageCost") &&
+          (typeof input.value !== "number" ||
+            input.value < (input.key === "aiMessageCost" ? 1 : 0) ||
+            input.value > (input.key === "aiMessageCost" ? 10 : 1000))
+        )
+          throw new Error(
+            input.key === "aiMessageCost"
+              ? "AI message cost must be between 1 and 10 Credits."
+              : "Welcome AI Credits must be between 0 and 1000."
           );
         await enforceRateLimit(
           ctx.user.id,
