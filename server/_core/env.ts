@@ -10,5 +10,8 @@ export const ENV = {
   robinhoodRpcUrl:
     process.env.ROBINHOOD_TESTNET_RPC_URL ??
     "https://rpc.testnet.chain.robinhood.com",
-  aiCreditTreasuryAddress: process.env.AI_CREDIT_TREASURY_ADDRESS ?? "",
+  projectTokenTreasuryAddress:
+    process.env.PROJECT_TOKEN_TREASURY_ADDRESS ??
+    process.env.AI_CREDIT_TREASURY_ADDRESS ??
+    "",
 };

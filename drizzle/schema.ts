@@ -620,6 +620,8 @@ export const agentMessages = mysqlTable(
     conversationId: varchar("conversationId", { length: 64 }).notNull(),
     role: mysqlEnum("role", ["user", "assistant"]).notNull(),
     content: text("content").notNull(),
+    walletAddress: varchar("walletAddress", { length: 42 }),
+    paymentId: int("paymentId"),
     creditsSpent: int("creditsSpent").default(0).notNull(),
     provider: varchar("provider", { length: 64 }),
     model: varchar("model", { length: 160 }),
@@ -684,6 +686,40 @@ export const creditTransactions = mysqlTable(
     ),
     index("credit_transactions_user_created_idx").on(
       table.userId,
+      table.createdAt
+    ),
+  ]
+);
+
+export const projectTokenPayments = mysqlTable(
+  "project_token_payments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    agentId: int("agentId").notNull(),
+    walletAddress: varchar("walletAddress", { length: 42 }).notNull(),
+    tokenAddress: varchar("tokenAddress", { length: 42 }).notNull(),
+    treasuryAddress: varchar("treasuryAddress", { length: 42 }).notNull(),
+    chainId: int("chainId").notNull(),
+    decimals: int("decimals").notNull(),
+    amountRaw: varchar("amountRaw", { length: 160 }).notNull(),
+    transactionHash: varchar("transactionHash", { length: 128 }).notNull(),
+    blockNumber: varchar("blockNumber", { length: 64 }),
+    status: mysqlEnum("status", ["submitted", "verified", "used"])
+      .default("submitted")
+      .notNull(),
+    failureReason: varchar("failureReason", { length: 512 }),
+    verifiedAt: timestamp("verifiedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("project_token_payments_tx_unique").on(table.transactionHash),
+    index("project_token_payments_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    index("project_token_payments_agent_created_idx").on(
+      table.agentId,
       table.createdAt
     ),
   ]

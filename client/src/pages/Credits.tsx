@@ -1,147 +1,159 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { ErrorCard, LoadingCard, PageHeader } from "@/components/AklaUi";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
-import { CheckCircle2, Coins, ExternalLink, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ExternalLink,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react";
+import { Link } from "wouter";
+import {
+  AI_MESSAGE_TOKEN_COST,
+  PROJECT_TOKEN_ADDRESS,
+  PROJECT_TOKEN_BUY_URL,
+  PROJECT_TOKEN_CHAIN_ID,
+} from "../../../shared/projectToken";
 
 export default function Credits() {
-  const balance = trpc.member.credits.balance.useQuery();
-  const packages = trpc.member.credits.packages.useQuery();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [txHash, setTxHash] = useState("");
-  const verify = trpc.member.credits.verifyPurchase.useMutation({
-    onSuccess: data => {
-      toast.success(`${data.credited} AI Credits added`);
-      setTxHash("");
-      balance.refetch();
-    },
-    onError: error => toast.error(error.message),
-  });
-  if (balance.isLoading || packages.isLoading)
+  const config = trpc.member.tokenPayments.config.useQuery();
+  if (config.isLoading)
     return (
       <DashboardLayout>
-        <LoadingCard label="Loading AI Credit economy…" />
+        <LoadingCard label="Loading project-token access…" />
       </DashboardLayout>
     );
-  if (balance.error || packages.error)
+  if (config.error)
     return (
       <DashboardLayout>
-        <ErrorCard
-          message={
-            balance.error?.message ??
-            packages.error?.message ??
-            "Credits unavailable."
-          }
-        />
+        <ErrorCard message={config.error.message} />
       </DashboardLayout>
     );
-  const selected = (packages.data ?? []).find(pkg => pkg.id === selectedId);
   return (
     <DashboardLayout>
       <PageHeader
-        eyebrow="AI Credit economy"
-        title="Fuel useful conversations"
-        description="AI Credits pay for agent usage. They are separate from Akla website points and separate from any project token."
+        eyebrow="Project-token access"
+        title="Own the token. Unlock the conversation."
+        description="Akla AI uses the project token as the economic basis for AI access. Website Points and referrals remain separate from on-chain token payments."
       />
       <div className="grid gap-4 md:grid-cols-3">
         <Metric
-          label="Current balance"
-          value={`${balance.data ?? 0} Credits`}
-          accent="violet"
+          label="Per AI message"
+          value={`${config.data?.messageCost ?? AI_MESSAGE_TOKEN_COST} tokens`}
+          accent="amber"
         />
-        <Metric label="Message cost" value="Configurable" accent="amber" />
-        <Metric label="Network" value="Testnet only" accent="mint" />
+        <Metric label="Network" value="Robinhood Testnet" accent="mint" />
+        <Metric label="Payment" value="Verified on-chain" accent="violet" />
       </div>
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
         <section className="panel-surface p-6">
           <div className="flex items-start gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-300/10 text-amber-100">
-              <Coins className="h-5 w-5" />
+              <WalletCards className="h-5 w-5" />
             </span>
             <div>
-              <p className="eyebrow">Credit packages</p>
+              <p className="eyebrow">The access loop</p>
               <h2 className="mt-2 font-display text-2xl font-semibold text-white">
-                Choose a testnet package
+                From token holder to AI access
               </h2>
             </div>
           </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            {(packages.data ?? []).map(pkg => (
-              <button
-                type="button"
-                key={pkg.id}
-                onClick={() => setSelectedId(pkg.id)}
-                className={`rounded-2xl border p-4 text-left transition ${selectedId === pkg.id ? "border-violet-300/30 bg-violet-300/[0.08]" : "border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.05]"}`}
-              >
-                <p className="text-sm font-semibold text-white">{pkg.name}</p>
-                <p className="mt-2 font-display text-2xl font-semibold text-amber-100">
-                  {pkg.credits}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">AI Credits</p>
-                <p className="mt-4 break-all font-mono text-[11px] text-slate-500">
-                  {pkg.priceWei} wei
-                </p>
-              </button>
-            ))}
+          <div className="mt-6 space-y-3">
+            <Step
+              number="01"
+              title="Buy Project Token"
+              copy="Use the official testnet DApp. The purchase button always opens the configured buy page."
+              done={false}
+            />
+            <Step
+              number="02"
+              title="Connect and verify your wallet"
+              copy="Sign the Proof of Passage message on Robinhood Chain Testnet."
+              done={false}
+            />
+            <Step
+              number="03"
+              title="Complete Proof of Passage"
+              copy="The backend checks your real token balance and records the verification history."
+              done={false}
+            />
+            <Step
+              number="04"
+              title="Pay per AI message"
+              copy={`Each message transfers exactly ${config.data?.messageCost ?? AI_MESSAGE_TOKEN_COST} project tokens to the configured treasury, then the backend verifies it before the AI responds.`}
+              done={false}
+            />
           </div>
-          {!packages.data?.length && (
-            <div className="mt-5 rounded-2xl border border-white/[0.07] p-5 text-sm leading-6 text-slate-500">
-              No active packages have been configured by an administrator yet.
-            </div>
-          )}
         </section>
         <section className="panel-surface p-6">
-          <p className="eyebrow">Verify a purchase</p>
+          <p className="eyebrow">Testnet token</p>
           <h2 className="mt-2 font-display text-2xl font-semibold text-white">
-            Add Credits after settlement
+            Get ready to chat
           </h2>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Send the exact selected amount from your verified wallet to the
-            server-configured treasury on Robinhood Chain Testnet, then paste
-            the transaction hash. The backend verifies chain, sender, recipient,
-            value, receipt status, and duplicate crediting.
+            No free AI response is issued after the payment requirement is
+            exhausted. If a wallet cannot cover the next message, chat stays
+            blocked and this purchase CTA remains the recovery path.
           </p>
-          <div className="mt-6 space-y-3">
-            <Input
-              value={txHash}
-              onChange={e => setTxHash(e.target.value)}
-              placeholder="0x transaction hash"
-              className="field-dark font-mono text-xs"
-            />
-            <Button
-              onClick={() =>
-                selected && verify.mutate({ packageId: selected.id, txHash })
-              }
-              disabled={!selected || txHash.length !== 66 || verify.isPending}
-              className="w-full bg-violet-500 text-white hover:bg-violet-400"
-            >
-              {verify.isPending
-                ? "Verifying on-chain…"
-                : selected
-                  ? `Verify ${selected.credits} Credits`
-                  : "Select a package"}
+          <a
+            href={PROJECT_TOKEN_BUY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-6 block"
+          >
+            <Button className="w-full bg-amber-300 text-slate-950 hover:bg-amber-200">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Buy Project Token
             </Button>
-          </div>
-          <div className="mt-6 space-y-3 rounded-2xl border border-amber-300/15 bg-amber-300/[0.06] p-4 text-xs leading-5 text-amber-100">
+          </a>
+          <Link
+            href="/proof-of-passage"
+            className="mt-3 flex items-center justify-center gap-2 text-sm font-semibold text-violet-200 hover:text-white"
+          >
+            Open Proof of Passage <ArrowRight className="h-4 w-4" />
+          </Link>
+          <div className="mt-6 rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.05] p-4 text-xs leading-5 text-emerald-100">
             <p className="flex items-center gap-2 font-semibold">
               <ShieldCheck className="h-4 w-4" />
-              Robinhood Chain Testnet only
+              Secure payment boundary
             </p>
-            <p>
-              Testnet ETH has no real monetary value. No mainnet payments are
-              supported.
-            </p>
-            <p>
-              Purchases remain unavailable until the Admin Console configures a
-              treasury address and package prices.
+            <p className="mt-2">
+              The server verifies chain, token contract, sender, treasury, exact
+              amount, decimals, receipt status, transfer event, and transaction
+              uniqueness. Testnet tokens have no real monetary value.
             </p>
           </div>
+          <p className="mt-5 break-all text-[11px] leading-5 text-slate-600">
+            Contract: {PROJECT_TOKEN_ADDRESS} · Chain ID:{" "}
+            {PROJECT_TOKEN_CHAIN_ID}
+          </p>
         </section>
       </div>
     </DashboardLayout>
+  );
+}
+
+function Step({
+  number,
+  title,
+  copy,
+}: {
+  number: string;
+  title: string;
+  copy: string;
+  done: boolean;
+}) {
+  return (
+    <div className="flex gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
+      <span className="font-mono text-xs text-violet-200">{number}</span>
+      <div>
+        <p className="font-semibold text-white">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-400">{copy}</p>
+      </div>
+      <CheckCircle2 className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-slate-700" />
+    </div>
   );
 }
 function Metric({

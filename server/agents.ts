@@ -24,6 +24,11 @@ import { getDb } from "./db";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
 import { enforceRateLimit, recordAdminAudit } from "./rewards";
+import { AI_MESSAGE_TOKEN_COST } from "../shared/projectToken";
+import {
+  releaseProjectTokenPayment,
+  reserveProjectTokenPayment,
+} from "./tokenPayments";
 
 const PLATFORM_RULES = [
   "You are an Akla AI community agent.",
@@ -294,7 +299,12 @@ export async function getPublicAgent(slug: string) {
 
 export async function chatWithAgent(
   userId: number,
-  input: { agentId: number; conversationId: string; message: string }
+  input: {
+    agentId: number;
+    conversationId: string;
+    message: string;
+    paymentId: number;
+  }
 ) {
   const db = await requireDb();
   const message = clean(input.message, 2000);
@@ -308,9 +318,12 @@ export async function chatWithAgent(
     .limit(1);
   if (!row || row.agent.status !== "launched")
     throw new Error("This agent is not available for chat.");
-  const cost = Math.max(1, Number(await getAiSetting("aiMessageCost", 1)) || 1);
-  const requestRef = `chat:${input.conversationId}:${randomBytes(5).toString("hex")}`;
-  await spendCredit(userId, cost, requestRef);
+  const payment = await reserveProjectTokenPayment(
+    userId,
+    input.agentId,
+    input.paymentId
+  );
+  const cost = AI_MESSAGE_TOKEN_COST;
   try {
     const history = await db
       .select({ role: agentMessages.role, content: agentMessages.content })
@@ -332,6 +345,8 @@ export async function chatWithAgent(
       conversationId: input.conversationId,
       role: "user",
       content: message,
+      walletAddress: payment.walletAddress,
+      paymentId: payment.id,
       creditsSpent: cost,
     });
     const tokenLabel = row.project.symbol
@@ -363,14 +378,14 @@ export async function chatWithAgent(
     });
     return {
       reply,
-      creditsSpent: cost,
-      balance: await getCreditBalance(userId),
+      paymentId: payment.id,
+      tokenCost: cost,
     };
   } catch (error) {
-    await refundCredit(userId, cost, `${requestRef}:refund`);
+    await releaseProjectTokenPayment(payment.id);
     console.error("[AgentChat] provider failure", error);
     throw new Error(
-      "The agent is temporarily unavailable. Your AI Credit was returned."
+      "The agent is temporarily unavailable. Your verified payment can be retried."
     );
   }
 }
@@ -510,7 +525,10 @@ export async function verifyCreditPurchase(
     )
     .limit(1);
   if (!pkg) throw new Error("Credit package is unavailable.");
-  if (!ENV.aiCreditTreasuryAddress || !isAddress(ENV.aiCreditTreasuryAddress))
+  if (
+    !ENV.projectTokenTreasuryAddress ||
+    !isAddress(ENV.projectTokenTreasuryAddress)
+  )
     throw new Error("AI Credit purchases are not configured yet.");
   if (!/^0x[0-9a-fA-F]{64}$/.test(input.txHash))
     throw new Error("Enter a valid testnet transaction hash.");
@@ -534,7 +552,7 @@ export async function verifyCreditPurchase(
       "The transaction could not be found on Robinhood Chain Testnet."
     );
   }
-  const treasury = getAddress(ENV.aiCreditTreasuryAddress);
+  const treasury = getAddress(ENV.projectTokenTreasuryAddress);
   if (
     tx.chainId !== ROBINHOOD_TESTNET.id ||
     !tx.to ||

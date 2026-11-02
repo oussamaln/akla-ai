@@ -164,6 +164,9 @@ export default function Admin() {
   const creditPackages = trpc.admin.ai.packages.list.useQuery(undefined, {
     enabled: user?.role === "admin",
   });
+  const tokenPayments = trpc.admin.ai.payments.useQuery(undefined, {
+    enabled: user?.role === "admin",
+  });
 
   useEffect(() => {
     if (multipliers.data)
@@ -590,6 +593,7 @@ export default function Admin() {
         }
         settingStatus={setAgentStatus.isPending}
       />
+      <TokenPaymentMonitor payments={tokenPayments.data ?? []} />
     </DashboardLayout>
   );
 }
@@ -1671,6 +1675,91 @@ function QuestManager({
         ))}
       </div>
     </article>
+  );
+}
+
+type TokenPaymentRow = {
+  payment: {
+    id: number;
+    walletAddress: string;
+    transactionHash: string;
+    blockNumber: string | null;
+    status: "submitted" | "verified" | "used";
+    chainId: number;
+  };
+  agentName: string;
+  projectName: string;
+};
+
+function TokenPaymentMonitor({ payments }: { payments: TokenPaymentRow[] }) {
+  return (
+    <section className="panel-surface mt-6 p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="eyebrow">Token payments</p>
+          <h2 className="mt-2 font-display text-2xl font-semibold text-white">
+            Verified AI message payments
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            Read-only reconciliation view for project-token transfers that
+            unlock AI messages.
+          </p>
+        </div>
+        <span className="rounded-full bg-emerald-300/10 px-3 py-1.5 text-xs font-semibold text-emerald-100">
+          {payments.length} records
+        </span>
+      </div>
+      {payments.length ? (
+        <div className="mt-5 overflow-x-auto rounded-2xl border border-white/[0.07]">
+          <table className="w-full min-w-[760px] text-left text-xs">
+            <thead className="bg-white/[0.035] text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Agent / project</th>
+                <th className="px-4 py-3 font-medium">Sender</th>
+                <th className="px-4 py-3 font-medium">Transaction</th>
+                <th className="px-4 py-3 font-medium">Chain / block</th>
+                <th className="px-4 py-3 font-medium">State</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06]">
+              {payments.map(({ payment, agentName, projectName }) => (
+                <tr key={payment.id} className="text-slate-300">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-white">{agentName}</p>
+                    <p className="mt-1 text-slate-500">{projectName}</p>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-[11px]">
+                    {payment.walletAddress.slice(0, 8)}…
+                    {payment.walletAddress.slice(-6)}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-[11px]">
+                    {payment.transactionHash.slice(0, 10)}…
+                    {payment.transactionHash.slice(-8)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>{payment.chainId}</p>
+                    <p className="mt-1 text-slate-500">
+                      {payment.blockNumber ?? "pending"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${payment.status === "used" ? "bg-emerald-300/10 text-emerald-100" : "bg-amber-300/10 text-amber-100"}`}
+                    >
+                      {payment.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-white/[0.07] p-5 text-sm leading-6 text-slate-500">
+          No verified project-token AI payments have been recorded yet.
+        </div>
+      )}
+    </section>
   );
 }
 

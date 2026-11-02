@@ -72,6 +72,13 @@ import {
   submitFeedback,
   verifyCreditPurchase,
 } from "../agents";
+import {
+  getProjectTokenBalance,
+  getProjectTokenEligibility,
+  getProjectTokenPaymentConfig,
+  listProjectTokenPayments,
+  verifyProjectTokenPayment,
+} from "../tokenPayments";
 
 const socialInput = z.object({
   x: z.string().max(320).optional(),
@@ -263,6 +270,38 @@ export const memberRouter = router({
       )
       .mutation(({ ctx, input }) => verifyCreditPurchase(ctx.user.id, input)),
   }),
+  tokenPayments: router({
+    config: protectedProcedure.query(() => getProjectTokenPaymentConfig()),
+    balance: protectedProcedure
+      .input(z.object({ walletAddress: z.string().trim().min(42).max(42) }))
+      .query(({ input }) => getProjectTokenBalance(input.walletAddress)),
+    eligibility: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number().int().positive(),
+          walletAddress: z.string().trim().min(42).max(42).optional(),
+        })
+      )
+      .query(({ ctx, input }) =>
+        getProjectTokenEligibility(
+          ctx.user.id,
+          input.agentId,
+          input.walletAddress
+        )
+      ),
+    verify: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number().int().positive(),
+          walletAddress: z.string().trim().min(42).max(42),
+          chainId: z.number().int(),
+          txHash: z.string().trim().length(66),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        verifyProjectTokenPayment(ctx.user.id, input)
+      ),
+  }),
   projects: router({
     mine: protectedProcedure.query(({ ctx }) => getMyProjects(ctx.user.id)),
     create: protectedProcedure
@@ -294,6 +333,7 @@ export const memberRouter = router({
           agentId: z.number().int().positive(),
           conversationId: z.string().trim().min(8).max(64),
           message: z.string().trim().min(1).max(2000),
+          paymentId: z.number().int().positive(),
         })
       )
       .mutation(({ ctx, input }) => chatWithAgent(ctx.user.id, input)),
@@ -635,6 +675,7 @@ export const adminRouter = router({
         .input(creditPackageInput)
         .mutation(({ ctx, input }) => saveCreditPackage(ctx.user.id, input)),
     }),
+    payments: adminProcedure.query(() => listProjectTokenPayments()),
   }),
   socialAccounts: router({
     list: adminProcedure.query(async () => {
